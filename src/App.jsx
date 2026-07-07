@@ -12,7 +12,7 @@ import { useState, useRef, useEffect } from "react";
 // !! CONFIGURATION — FILL THIS IN BEFORE DEPLOYING !!
 // Replace with your Cloudflare Worker URL after setup
 // ─────────────────────────────────────────────────────────────
-const WORKER_URL = "https://aegis-proxy.r-fella10.workers.dev";
+constWORKER_URL = "https://aegis-proxy.r-fella10.workers.dev";
 
 const Styles = () => (
   <style>{`
