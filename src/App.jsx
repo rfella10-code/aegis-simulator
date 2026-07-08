@@ -14,6 +14,14 @@ import { useState, useRef, useEffect } from "react";
 // ─────────────────────────────────────────────────────────────
 const WORKER_URL = "https://aegis-proxy.r-fella10.workers.dev";
 
+// ─────────────────────────────────────────────────────────────
+// !! ACCESS CODE — change this before sharing the app !!
+// Simple shared-passcode gate. Protects API credits from
+// unauthorized/drive-by usage. Not full auth — swap for
+// Supabase or similar if this becomes an institutional tool.
+// ─────────────────────────────────────────────────────────────
+const ACCESS_CODE = "aegis2026";
+
 const Styles = () => (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap');
@@ -26,7 +34,7 @@ const Styles = () => (
       --amb:#FFB800;--ad:rgba(255,184,0,0.13);
       --ros:#FF4D6A;--rd:rgba(255,77,106,0.13);
       --vio:#A78BFA;--vd:rgba(167,139,250,0.13);
-      --tx:#E8F0FF;--tm:rgba(232,240,255,0.42);
+      --tx:#E8F0FF;--tm:rgba(232,240,255,0.68);
       --fd:'Syne',sans-serif;--fm:'IBM Plex Mono',monospace;
     }
     @keyframes orb1{0%,100%{transform:translate(0,0)scale(1)}40%{transform:translate(70px,-50px)scale(1.1)}70%{transform:translate(-30px,60px)scale(.95)}}
@@ -84,7 +92,7 @@ const SCENARIOS = [
     clientName:"Jordan", age:16, pronouns:"they/them",
     description:"Brought in after texting 'I want to disappear.' History of superficial self-harm. First crisis presentation.",
     context:"Jordan was brought in by their parent after texting a friend 'I just want to disappear forever.' History of superficial cutting on wrists. Currently denies active plan or intent. Very shut down, not making eye contact. First time in crisis services. Parent is waiting outside.",
-    initialAgitation:0.72, riskLevel:"MOD-HIGH", riskColor:"#FF4D6A",
+    initialAgitation:0.72, riskLevel:"MOD-HIGH", riskColor:"#FF6B35",
     tags:["Passive SI","Self-Harm Hx","First Presentation"],
     considerations:["Assess lethality without appearing clinical or interrogative","Build rapport before any direct safety questions — validate first","Avoid minimizing. 'At least you don't have a plan' escalates."]
   },
@@ -111,7 +119,7 @@ const SCENARIOS = [
     clientName:"Sage", age:14, pronouns:"she/her",
     description:"Disclosed physical abuse today. Mandatory report filed. Terrified and feeling betrayed.",
     context:"Sage disclosed physical abuse by a stepparent to her teacher earlier today. Mandatory report has been filed. She is now in the counselor's office terrified of what happens next, feeling that telling someone 'made everything worse.' Dissociating intermittently. Fears being removed from home.",
-    initialAgitation:0.68, riskLevel:"MODERATE", riskColor:"#FFB800",
+    initialAgitation:0.68, riskLevel:"MODERATE", riskColor:"#FF9F0A",
     tags:["Trauma","Disclosure","Safety Planning"],
     considerations:["She may feel disclosure was a mistake — don't argue, validate the fear","Explain the mandatory report process clearly — reduce uncertainty","Radical genuineness is key here: be real, not clinical"]
   },
@@ -120,7 +128,7 @@ const SCENARIOS = [
     clientName:"Riley", age:10, pronouns:"they/them",
     description:"10-year-old with ASD Level 1. Post-meltdown after a fire drill. Partially non-verbal, stimming, overwhelmed.",
     context:"Riley has ASD Level 1 and severe sensory sensitivities. A fire drill triggered a full meltdown in the cafeteria. They are now in the school psychologist's office, partially non-verbal, rocking, covering their ears. Parents are 25 minutes away. Riley communicates well when regulated but right now language is minimal. They use visual supports at home.",
-    initialAgitation:0.82, riskLevel:"HIGH", riskColor:"#A78BFA",
+    initialAgitation:0.82, riskLevel:"HIGH", riskColor:"#FF4D6A",
     tags:["ASD L1","Post-Meltdown","Sensory","Non-Verbal","Ages 8–12"],
     considerations:["SILENCE IS THE FIRST INTERVENTION — say nothing, just lower the sensory input","Do not demand eye contact — it is neurologically painful right now","Your nervous system co-regulates theirs: slow your breath, slow your voice, slow your movement","Wait for the window — when rocking slows, THEN offer a very simple 1-2 word check-in"]
   },
@@ -138,15 +146,42 @@ const SCENARIOS = [
     clientName:"Devon", age:28, pronouns:"he/him",
     description:"28-year-old just diagnosed ASD Level 1. Partner of 4 years left after disclosure. Grief, identity reconstruction.",
     context:"Devon received his ASD Level 1 diagnosis 3 weeks ago. He disclosed it to his partner of 4 years and she ended the relationship within the week. He's now in your office for the first time — presenting with complex grief, identity confusion ('was anything I felt real?'), and re-reading his entire life history through this new lens. He's highly verbal and intellectualizes easily but is actually in significant emotional pain underneath.",
-    initialAgitation:0.55, riskLevel:"MODERATE", riskColor:"#FFB800",
+    initialAgitation:0.55, riskLevel:"MODERATE", riskColor:"#FF9F0A",
     tags:["ASD L1","Late Diagnosis","Grief","Identity","Adult 25+"],
     considerations:["This is grief AND identity reconstruction simultaneously — honor both without rushing either","Avoid 'at least you have answers now' — it lands as minimization of the loss","He may appear emotionally flat but is not — his affect regulation looks different, not absent","Psychoeducation about ASD can be grounding but NOT in the first session. Relationship first."]
+  },
+  {
+    id:"child_mutism", title:"Early Childhood Acute Withdrawal", icon:"🧸",
+    clientName:"Emmy", age:6, pronouns:"she/her",
+    description:"6-year-old refusing to speak since witnessing a violent domestic incident 3 days ago. Communicating only through nods and a stuffed rabbit.",
+    context:"Emmy witnessed a violent domestic incident between her parents 3 days ago. Police were involved and her father was removed from the home. She has not spoken a full sentence since. She's in your office clutching a stuffed rabbit, will nod or shake her head, and occasionally whispers to the rabbit. Mother reports Emmy was previously talkative and outgoing. She startles at loud sounds and has refused to sleep alone.",
+    initialAgitation:0.60, riskLevel:"MODERATE", riskColor:"#FF9F0A",
+    tags:["Early Childhood","Acute Trauma","Selective Withdrawal","Ages 4–8"],
+    considerations:["Get physically low — sit on the floor or a small chair; towering over her maintains threat","The rabbit is her voice right now — talk TO the rabbit, let answers come through it","Play and parallel activity BEFORE any direct questions — drawing or blocks lower the demand","Never ask her to describe what she saw — your job today is safety and rapport, not disclosure"]
+  },
+  {
+    id:"college_crisis", title:"College Burnout & Passive SI", icon:"🎓",
+    clientName:"Nia", age:21, pronouns:"she/her",
+    description:"Junior pre-med, first-generation student. Failed organic chemistry, hiding it from family. 'Everyone would be better off if I just wasn't here.'",
+    context:"Nia is a first-generation college junior on a pre-med track carrying her family's expectations. She failed organic chemistry this semester and has been hiding it, skipping classes for 3 weeks, and sleeping 12+ hours a day. She came to the counseling center after telling her roommate 'everyone would be better off if I just wasn't here.' She denies a plan but describes feeling like 'a fraud who wasted everyone's sacrifices.' High-functioning presentation masking significant depression.",
+    initialAgitation:0.58, riskLevel:"MOD-HIGH", riskColor:"#FF6B35",
+    tags:["Passive SI","Academic Crisis","First-Gen","Ages 18–24"],
+    considerations:["The family-expectation weight IS the clinical content — validate the burden before problem-solving the grades","Assess SI directly but normalize first: high-functioning presenters minimize when asked bluntly","'Fraud' language signals impostor-shame spiral — Validation L4 (given her history, this makes sense) lands well","Do not rush to solutions about school. The academic problem is solvable; she can't see that while drowning."]
+  },
+  {
+    id:"geriatric_grief", title:"Older Adult — Bereavement & Purpose Loss", icon:"🕰",
+    clientName:"Walter", age:71, pronouns:"he/him",
+    description:"71-year-old widower, 4 months after losing his wife of 48 years. Stopped his cardiac meds 'because there's no point.' Brought in by his daughter.",
+    context:"Walter lost his wife of 48 years to cancer 4 months ago. His daughter brought him in after discovering he'd stopped taking his cardiac medications, saying 'there's no point anymore.' He is polite but dismissive — 'I don't need a therapist, I need my wife back.' He denies active suicidal intent but the medication noncompliance is a passive self-harm pattern. He was a machinist for 45 years; his identity was built on being useful and providing. He now describes his days as 'waiting.'",
+    initialAgitation:0.48, riskLevel:"MOD-HIGH", riskColor:"#FF6B35",
+    tags:["Bereavement","Passive Self-Harm","Med Noncompliance","Ages 65+"],
+    considerations:["Respect the dismissiveness — his generation often reads therapy as weakness; don't fight that frame, work within it","The medication refusal is the clinical priority — it's passive SI wearing practical clothing","Purpose and usefulness are his language — explore roles (grandfather, mentor, craftsman) rather than feelings vocabulary first","Grief at 48 years of marriage is not pathology — normalize the depth while addressing the danger"]
   }
 ];
 
 const DIFFICULTIES = [
-  {id:"novice",label:"NOVICE",desc:"Cooperative. Responds to basic validation. Forgiving of minor errors.",modifier:-0.18,color:"#00FFB2"},
-  {id:"intermediate",label:"INTERMEDIATE",desc:"Realistic resistance. Requires solid DBT technique.",modifier:0,color:"#FFB800"},
+  {id:"novice",label:"NOVICE",desc:"Cooperative. Responds to basic validation. Forgiving of minor errors.",modifier:-0.18,color:"#FFD60A"},
+  {id:"intermediate",label:"INTERMEDIATE",desc:"Realistic resistance. Requires solid DBT technique.",modifier:0,color:"#FF9F0A"},
   {id:"advanced",label:"ADVANCED",desc:"Highly dysregulated. Expert-level DBT required to de-escalate.",modifier:0.10,color:"#FF4D6A"},
 ];
 
@@ -164,6 +199,15 @@ const CLINICIAN_PROFILES = [
    specialties:["DBT","CBT","Personality Disorders","Life Transitions","Late Diagnosis Support"],
    note:"Evaluates against standard outpatient DBT and evidence-based adult intervention."},
 ];
+
+// Maps each clinician role to the scenarios appropriate to their scope of practice.
+// Drives the cascading Role → Scenario dropdown.
+const ROLE_SCENARIOS = {
+  child_psych:  ["si","panic","substance","trauma","child_mutism","adhd_explosive"],
+  neuro_psych:  ["asd_meltdown","adhd_explosive","adult_asd_late_dx"],
+  school_psych: ["si","panic","substance","trauma","asd_meltdown","adhd_explosive","college_crisis"],
+  adult_psych:  ["college_crisis","adult_asd_late_dx","geriatric_grief"],
+};
 
 const DBT_REF = [
   ["VALIDATION L1-6","Listen actively, reflect, read mind, validate history, radical genuineness, radical equality"],
@@ -284,7 +328,7 @@ INCREASE (poor technique):
 ${difficulty==="advanced"?"ADVANCED: Only master-level, layered DBT skills de-escalate. Most average responses will escalate slightly.":difficulty==="novice"?"NOVICE: Basic empathy and reflection work. Very forgiving of minor errors.":"INTERMEDIATE: Realistic, nuanced — some techniques work, some don't."}
 
 RESPONSE RULES:
-- Authentic adolescent voice. Short (1-3 sentences MAX). Raw and emotionally real.
+- Authentic voice for your AGE (${scenario.age}) and life stage. A 6-year-old speaks in fragments; a teen is raw and defensive; an older adult may be formal, dismissive, or understated. Short (1-3 sentences MAX). Emotionally real.
 - Do NOT act like a therapy textbook. Be messy, human, and defensive where appropriate.
 - Respond ONLY as valid JSON with no markdown, no extra text:
 {"verbal_output":"...","updated_agitation":0.XX,"nonverbal_cues":"brief physical observation"}`;
@@ -369,8 +413,9 @@ Respond ONLY as valid JSON (no markdown):
 /* ── Main Component ──────────────────────────────────── */
 export default function AegisSimulator() {
   const [screen,        setScreen]       = useState("setup");
-  const [selectedSc,    setSelectedSc]   = useState(SCENARIOS[0]);
-  const [selectedDiff,  setSelectedDiff] = useState("intermediate");
+  const [clinProfile,   setClinProfile]  = useState(null);   // Step 1 — role (was defaulted, now cascades)
+  const [selectedSc,    setSelectedSc]   = useState(null);   // Step 2 — scenario (filtered by role)
+  const [selectedDiff,  setSelectedDiff] = useState(null);   // Step 3 — difficulty
   const [agitation,     setAgitation]    = useState(0.75);
   const [agiHistory,    setAgiHistory]   = useState([]);
   const [conversation,  setConversation] = useState([]);
@@ -385,11 +430,15 @@ export default function AegisSimulator() {
   const [elapsed,       setElapsed]      = useState(0);
   const [turnCount,     setTurnCount]    = useState(0);
   const [showDbt,       setShowDbt]      = useState(false);
-  const [clinProfile,   setClinProfile]  = useState("child_psych");
   const [isHinting,     setIsHinting]    = useState(false);
   const [currentHint,   setCurrentHint]  = useState(null);
   const [showHint,      setShowHint]     = useState(false);
   const [disclaimerAck, setDisclaimerAck]= useState(false);
+
+  // Access gate
+  const [accessGranted, setAccessGranted]= useState(false);
+  const [accessInput,   setAccessInput]  = useState("");
+  const [accessError,   setAccessError]  = useState(false);
 
   const convRef  = useRef(null);
   const inputRef = useRef(null);
@@ -424,7 +473,7 @@ export default function AegisSimulator() {
 Context: ${sc.context}
 Initial agitation: ${initAgi.toFixed(2)}/1.0
 Generate your OPENING behavioral presentation as the clinician enters the room.
-1-2 sentences MAX. Emotionally raw, authentic adolescent voice.
+1-2 sentences MAX. Emotionally authentic voice matched to your age and life stage.
 Respond ONLY as valid JSON: {"verbal_output":"...","updated_agitation":${initAgi.toFixed(2)},"nonverbal_cues":"brief physical description"}`;
 
       const res=await fetch(`${WORKER_URL}/claude`,{
@@ -556,6 +605,62 @@ Respond ONLY as valid JSON (no markdown):
   };
 
   /* ════════════════════════════════════════
+     ACCESS GATE — renders first, before disclaimer
+  ════════════════════════════════════════ */
+  const renderAccessGate = () => (
+    <div style={{
+      position:"fixed",inset:0,zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center",
+      background:"rgba(4,8,18,0.96)",backdropFilter:"blur(8px)",padding:"20px",
+    }}>
+      <div className="gl" style={{
+        maxWidth:"400px",width:"100%",borderRadius:"20px",padding:"32px 28px",
+        border:"1px solid rgba(0,212,255,0.28)",boxShadow:"0 0 60px rgba(0,212,255,0.12)",
+        textAlign:"center",
+      }}>
+        <div style={{fontFamily:"var(--fd)",fontSize:34,fontWeight:800,letterSpacing:"-2px",marginBottom:8,animation:"breathe 5s ease-in-out infinite"}}>
+          AEGIS
+        </div>
+        <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--tm)",letterSpacing:"3px",marginBottom:26,textTransform:"uppercase"}}>
+          Restricted Access · Authorized Testers Only
+        </div>
+        <input
+          type="password"
+          value={accessInput}
+          onChange={e=>{setAccessInput(e.target.value);setAccessError(false);}}
+          onKeyDown={e=>{if(e.key==="Enter") {
+            if(accessInput===ACCESS_CODE){setAccessGranted(true);} else {setAccessError(true);}
+          }}}
+          placeholder="Enter access code"
+          style={{
+            width:"100%",padding:"13px 16px",fontFamily:"var(--fm)",fontSize:14,textAlign:"center",
+            background:"rgba(0,212,255,.05)",color:"var(--tx)",letterSpacing:"2px",
+            border:`1px solid ${accessError?"var(--ros)":"var(--gb)"}`,borderRadius:12,
+            outline:"none",marginBottom:accessError?10:20,
+          }}
+        />
+        {accessError && (
+          <div style={{fontFamily:"var(--fm)",fontSize:11,color:"var(--ros)",marginBottom:16}}>
+            ⚠ Incorrect code. Contact the developer for access.
+          </div>
+        )}
+        <button
+          onClick={()=>{
+            if(accessInput===ACCESS_CODE){setAccessGranted(true);} else {setAccessError(true);}
+          }}
+          className="tx-btn"
+          style={{width:"100%",padding:"14px",fontSize:"13px",letterSpacing:"0.04em"}}
+        >
+          <span style={{position:"relative",zIndex:1}}>UNLOCK →</span>
+        </button>
+        <div style={{fontFamily:"var(--fm)",fontSize:9,color:"rgba(232,240,255,.28)",marginTop:18,lineHeight:1.6}}>
+          AEGIS is a clinical training tool in limited testing.<br/>
+          Access codes are issued individually by the developer.
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ════════════════════════════════════════
      DISCLAIMER GATE
   ════════════════════════════════════════ */
   const renderDisclaimer = () => (
@@ -619,112 +724,137 @@ Respond ONLY as valid JSON (no markdown):
         </div>
       </div>
 
-      {/* Scenario selector */}
-      <div className="s1" style={{marginBottom:28}}>
-        <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--tm)",letterSpacing:"2.5px",textTransform:"uppercase",marginBottom:12}}>Select Crisis Scenario</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          {SCENARIOS.map(sc=>(
-            <div key={sc.id} className={`gl sc-card ${selectedSc.id===sc.id?"sel":""}`}
-              style={{borderRadius:18,padding:"18px 20px",borderLeft:`3px solid ${selectedSc.id===sc.id?sc.riskColor:"rgba(255,255,255,.1)"}`,boxShadow:selectedSc.id===sc.id?`0 0 26px ${sc.riskColor}20`:""}}
-              onClick={()=>setSelectedSc(sc)}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-                <span style={{fontSize:26}}>{sc.icon}</span>
-                <div style={{fontFamily:"var(--fm)",fontSize:9,color:sc.riskColor,background:`${sc.riskColor}18`,padding:"3px 9px",borderRadius:20,border:`1px solid ${sc.riskColor}40`,letterSpacing:"1px"}}>{sc.riskLevel}</div>
-              </div>
-              <div style={{fontFamily:"var(--fd)",fontSize:15,fontWeight:700,marginBottom:6}}>{sc.title}</div>
-              <div style={{fontFamily:"var(--fm)",fontSize:11,color:"var(--tm)",lineHeight:1.7,marginBottom:10}}>{sc.description}</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                {sc.tags.map(t=>(
-                  <span key={t} style={{fontFamily:"var(--fm)",fontSize:9,color:"rgba(232,240,255,.45)",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",padding:"2px 8px",borderRadius:20}}>{t}</span>
-                ))}
-              </div>
-              {selectedSc.id===sc.id&&(
-                <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,.07)"}}>
-                  <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--cyan)",letterSpacing:"1.5px",marginBottom:5}}>INITIAL AGITATION</div>
-                  <div style={{height:4,background:"rgba(255,255,255,.05)",borderRadius:99,overflow:"hidden",marginBottom:4}}>
-                    <div style={{height:"100%",width:`${sc.initialAgitation*100}%`,background:`linear-gradient(to right,${sc.riskColor}55,${sc.riskColor})`,borderRadius:99}}/>
-                  </div>
-                  <div style={{fontFamily:"var(--fm)",fontSize:10,color:sc.riskColor}}>{sc.initialAgitation.toFixed(2)} / 1.0</div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* ── CASCADING SELECTION PANEL ── */}
+      {/* Role → Scenario → Difficulty. Each dropdown only enables once the prior one is chosen. */}
+      <div className="gl s1" style={{borderRadius:20,padding:"22px",marginBottom:20}}>
+        <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--tm)",letterSpacing:"2.5px",textTransform:"uppercase",marginBottom:16}}>Configure Simulation</div>
 
-      {/* Difficulty */}
-      <div className="s2" style={{marginBottom:24}}>
-        <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--tm)",letterSpacing:"2.5px",textTransform:"uppercase",marginBottom:12}}>Difficulty Level</div>
-        <div style={{display:"flex",gap:10}}>
-          {DIFFICULTIES.map(d=>(
-            <div key={d.id} onClick={()=>setSelectedDiff(d.id)} className="gl"
-              style={{flex:1,borderRadius:14,padding:"14px 16px",cursor:"pointer",transition:"all .2s",
-                borderLeft:`3px solid ${selectedDiff===d.id?d.color:"rgba(255,255,255,.1)"}`,
-                background:selectedDiff===d.id?`${d.color}0D`:"",
-                boxShadow:selectedDiff===d.id?`0 0 20px ${d.color}25`:""
-              }}>
-              <div style={{fontFamily:"var(--fd)",fontSize:13,fontWeight:800,color:selectedDiff===d.id?d.color:"var(--tm)",letterSpacing:"1px",marginBottom:5}}>{d.label}</div>
-              <div style={{fontFamily:"var(--fm)",fontSize:11,color:"rgba(232,240,255,.4)",lineHeight:1.65}}>{d.desc}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
 
-      {/* Clinician profile */}
-      <div className="s3" style={{marginBottom:24}}>
-        <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--tm)",letterSpacing:"2.5px",textTransform:"uppercase",marginBottom:12}}>Your Clinical Role</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          {CLINICIAN_PROFILES.map(p=>(
-            <div key={p.id} onClick={()=>setClinProfile(p.id)} className="gl"
-              style={{borderRadius:14,padding:"14px 16px",cursor:"pointer",transition:"all .2s",
-                borderLeft:`3px solid ${clinProfile===p.id?p.color:"rgba(255,255,255,.1)"}`,
-                background:clinProfile===p.id?`${p.color}0D`:"",
-                boxShadow:clinProfile===p.id?`0 0 18px ${p.color}22`:""}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-                <div style={{fontFamily:"var(--fd)",fontSize:13,fontWeight:700,color:clinProfile===p.id?p.color:"var(--tx)"}}>{p.label}</div>
-                <div style={{fontFamily:"var(--fm)",fontSize:9,color:p.color,background:`${p.color}16`,padding:"2px 8px",borderRadius:20,border:`1px solid ${p.color}40`}}>{p.degree}</div>
-              </div>
-              <div style={{fontFamily:"var(--fm)",fontSize:9,color:"rgba(232,240,255,.38)",marginBottom:6}}>{p.ageRange} · {p.note}</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                {p.specialties.map(s=>(
-                  <span key={s} style={{fontFamily:"var(--fm)",fontSize:8,color:clinProfile===p.id?p.color:"rgba(232,240,255,.32)",background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.07)",padding:"1px 7px",borderRadius:20}}>{s}</span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Mission brief */}
-      <div className="gl s4" style={{borderRadius:20,padding:"20px",marginBottom:20}}>
-        <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--tm)",letterSpacing:"2px",marginBottom:14}}>MISSION BRIEF</div>
-        <div style={{display:"flex",gap:18,alignItems:"flex-start",marginBottom:16}}>
-          <div style={{width:54,height:54,borderRadius:14,background:`${selectedSc.riskColor}16`,border:`2px solid ${selectedSc.riskColor}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>{selectedSc.icon}</div>
+          {/* STEP 1 — Role */}
           <div>
-            <div style={{fontFamily:"var(--fd)",fontSize:16,fontWeight:700,marginBottom:6}}>{selectedSc.clientName}, {selectedSc.age} · {selectedSc.title}</div>
-            <div style={{fontFamily:"var(--fm)",fontSize:12,color:"var(--tm)",lineHeight:1.8}}>{selectedSc.context}</div>
+            <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--cyan)",letterSpacing:"1.5px",marginBottom:6}}>1 · CLINICAL ROLE</div>
+            <select
+              value={clinProfile||""}
+              onChange={e=>{
+                setClinProfile(e.target.value);
+                setSelectedSc(null);       // reset downstream selections
+                setSelectedDiff(null);
+              }}
+              style={{
+                width:"100%",padding:"12px 14px",fontFamily:"var(--fm)",fontSize:12,
+                background:"rgba(0,212,255,.05)",color:"var(--tx)",
+                border:`1px solid ${clinProfile?"var(--cyan)":"var(--gb)"}`,borderRadius:10,
+                outline:"none",cursor:"pointer",appearance:"none",WebkitAppearance:"none",
+              }}>
+              <option value="" disabled>Select role...</option>
+              {CLINICIAN_PROFILES.map(p=>(
+                <option key={p.id} value={p.id}>{p.label} ({p.ageRange})</option>
+              ))}
+            </select>
+          </div>
+
+          {/* STEP 2 — Scenario (filtered by role) */}
+          <div>
+            <div style={{fontFamily:"var(--fm)",fontSize:9,color:clinProfile?"var(--cyan)":"rgba(232,240,255,.2)",letterSpacing:"1.5px",marginBottom:6}}>2 · CRISIS SCENARIO</div>
+            <select
+              value={selectedSc?.id||""}
+              disabled={!clinProfile}
+              onChange={e=>{
+                const sc=SCENARIOS.find(s=>s.id===e.target.value);
+                setSelectedSc(sc);
+                setSelectedDiff(null);     // reset difficulty when scenario changes
+              }}
+              style={{
+                width:"100%",padding:"12px 14px",fontFamily:"var(--fm)",fontSize:12,
+                background:clinProfile?"rgba(0,212,255,.05)":"rgba(255,255,255,.02)",
+                color:clinProfile?"var(--tx)":"rgba(232,240,255,.25)",
+                border:`1px solid ${selectedSc?"var(--cyan)":"var(--gb)"}`,borderRadius:10,
+                outline:"none",cursor:clinProfile?"pointer":"not-allowed",appearance:"none",WebkitAppearance:"none",
+              }}>
+              <option value="" disabled>{clinProfile?"Select scenario...":"Choose a role first"}</option>
+              {clinProfile && (ROLE_SCENARIOS[clinProfile]||[]).map(id=>{
+                const sc=SCENARIOS.find(s=>s.id===id);
+                return sc ? <option key={sc.id} value={sc.id}>{sc.icon} {sc.clientName}, {sc.age} — {sc.title}</option> : null;
+              })}
+            </select>
+          </div>
+
+          {/* STEP 3 — Difficulty */}
+          <div>
+            <div style={{fontFamily:"var(--fm)",fontSize:9,color:selectedSc?"var(--cyan)":"rgba(232,240,255,.2)",letterSpacing:"1.5px",marginBottom:6}}>3 · DIFFICULTY</div>
+            <select
+              value={selectedDiff||""}
+              disabled={!selectedSc}
+              onChange={e=>setSelectedDiff(e.target.value)}
+              style={{
+                width:"100%",padding:"12px 14px",fontFamily:"var(--fm)",fontSize:12,
+                background:selectedSc?"rgba(0,212,255,.05)":"rgba(255,255,255,.02)",
+                color:selectedSc?"var(--tx)":"rgba(232,240,255,.25)",
+                border:`1px solid ${selectedDiff?DIFFICULTIES.find(d=>d.id===selectedDiff)?.color:"var(--gb)"}`,borderRadius:10,
+                outline:"none",cursor:selectedSc?"pointer":"not-allowed",appearance:"none",WebkitAppearance:"none",
+              }}>
+              <option value="" disabled>{selectedSc?"Select difficulty...":"Choose a scenario first"}</option>
+              {DIFFICULTIES.map(d=>(
+                <option key={d.id} value={d.id}>{d.label}</option>
+              ))}
+            </select>
           </div>
         </div>
-        <div style={{paddingTop:14,borderTop:"1px solid rgba(255,255,255,.07)"}}>
-          <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--cyan)",letterSpacing:"2px",marginBottom:10}}>KEY CLINICAL CONSIDERATIONS</div>
-          {selectedSc.considerations.map((c,i)=>(
-            <div key={i} style={{display:"flex",gap:8,marginBottom:7,alignItems:"flex-start"}}>
-              <div style={{width:16,height:16,borderRadius:4,background:"var(--cd)",border:"1px solid rgba(0,212,255,.4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"var(--cyan)",flexShrink:0,marginTop:1}}>→</div>
-              <div style={{fontFamily:"var(--fm)",fontSize:11,color:"rgba(232,240,255,.62)",lineHeight:1.65}}>{c}</div>
-            </div>
-          ))}
-        </div>
+
+        {/* Live risk/difficulty color chips — all three selections visible at a glance, no scrolling */}
+        {(clinProfile||selectedSc||selectedDiff) && (
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:16,paddingTop:16,borderTop:"1px solid rgba(255,255,255,.07)"}}>
+            {clinProfile && (()=>{const p=CLINICIAN_PROFILES.find(x=>x.id===clinProfile);
+              return <span style={{fontFamily:"var(--fm)",fontSize:9,color:p.color,background:`${p.color}18`,border:`1px solid ${p.color}40`,padding:"3px 10px",borderRadius:20}}>{p.label}</span>;
+            })()}
+            {selectedSc && <span style={{fontFamily:"var(--fm)",fontSize:9,color:selectedSc.riskColor,background:`${selectedSc.riskColor}18`,border:`1px solid ${selectedSc.riskColor}40`,padding:"3px 10px",borderRadius:20}}>{selectedSc.riskLevel}</span>}
+            {selectedDiff && (()=>{const d=DIFFICULTIES.find(x=>x.id===selectedDiff);
+              return <span style={{fontFamily:"var(--fm)",fontSize:9,color:d.color,background:`${d.color}18`,border:`1px solid ${d.color}40`,padding:"3px 10px",borderRadius:20}}>{d.label}</span>;
+            })()}
+          </div>
+        )}
       </div>
 
+      {/* Mission brief — only appears once a scenario is chosen */}
+      {selectedSc && (
+        <div className="gl s4" style={{borderRadius:20,padding:"20px",marginBottom:20}}>
+          <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--tm)",letterSpacing:"2px",marginBottom:14}}>MISSION BRIEF</div>
+          <div style={{display:"flex",gap:18,alignItems:"flex-start",marginBottom:16}}>
+            <div style={{width:54,height:54,borderRadius:14,background:`${selectedSc.riskColor}16`,border:`2px solid ${selectedSc.riskColor}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>{selectedSc.icon}</div>
+            <div>
+              <div style={{fontFamily:"var(--fd)",fontSize:16,fontWeight:700,marginBottom:6}}>{selectedSc.clientName}, {selectedSc.age} · {selectedSc.title}</div>
+              <div style={{fontFamily:"var(--fm)",fontSize:12,color:"var(--tm)",lineHeight:1.8}}>{selectedSc.context}</div>
+            </div>
+          </div>
+          <div style={{paddingTop:14,borderTop:"1px solid rgba(255,255,255,.07)"}}>
+            <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--cyan)",letterSpacing:"2px",marginBottom:10}}>KEY CLINICAL CONSIDERATIONS</div>
+            {selectedSc.considerations.map((c,i)=>(
+              <div key={i} style={{display:"flex",gap:8,marginBottom:7,alignItems:"flex-start"}}>
+                <div style={{width:16,height:16,borderRadius:4,background:"var(--cd)",border:"1px solid rgba(0,212,255,.4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"var(--cyan)",flexShrink:0,marginTop:1}}>→</div>
+                <div style={{fontFamily:"var(--fm)",fontSize:11,color:"rgba(232,240,255,.62)",lineHeight:1.65}}>{c}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="s5">
-        <button onClick={startSimulation} style={{
-          width:"100%",padding:"18px",background:"linear-gradient(135deg,var(--cyan),#006FA8)",
-          color:"#001520",border:"none",fontFamily:"var(--fd)",fontWeight:800,fontSize:16,
-          borderRadius:16,cursor:"pointer",boxShadow:"0 0 40px rgba(0,212,255,.32)",
+        <button onClick={startSimulation} disabled={!clinProfile||!selectedSc||!selectedDiff} style={{
+          width:"100%",padding:"18px",
+          background: (clinProfile&&selectedSc&&selectedDiff) ? "linear-gradient(135deg,var(--cyan),#006FA8)" : "rgba(255,255,255,.06)",
+          color: (clinProfile&&selectedSc&&selectedDiff) ? "#001520" : "rgba(232,240,255,.3)",
+          border:"none",fontFamily:"var(--fd)",fontWeight:800,fontSize:16,
+          borderRadius:16,cursor:(clinProfile&&selectedSc&&selectedDiff)?"pointer":"not-allowed",
+          boxShadow:(clinProfile&&selectedSc&&selectedDiff)?"0 0 40px rgba(0,212,255,.32)":"none",
           position:"relative",overflow:"hidden",letterSpacing:".5px"
         }}>
-          <span style={{position:"relative",zIndex:1}}>INITIALIZE SIMULATION →</span>
-          <div style={{position:"absolute",top:0,bottom:0,width:"35%",background:"linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent)",animation:"scanBar 2.2s ease-in-out infinite"}}/>
+          <span style={{position:"relative",zIndex:1}}>
+            {(clinProfile&&selectedSc&&selectedDiff) ? "INITIALIZE SIMULATION →" : "Complete all 3 selections above"}
+          </span>
+          {(clinProfile&&selectedSc&&selectedDiff) && (
+            <div style={{position:"absolute",top:0,bottom:0,width:"35%",background:"linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent)",animation:"scanBar 2.2s ease-in-out infinite"}}/>
+          )}
         </button>
         <div style={{fontFamily:"var(--fm)",fontSize:10,color:"rgba(232,240,255,.22)",textAlign:"center",marginTop:12,lineHeight:1.7}}>
           Dual-agent parallel inference · Anthropic API · Azure AI Foundry architecture
@@ -919,22 +1049,8 @@ Respond ONLY as valid JSON (no markdown):
               <div className="gl" style={{borderRadius:18,padding:"20px",flex:1,display:"flex",flexDirection:"column",gap:10}}>
                 <div style={{fontFamily:"var(--fm)",fontSize:11,color:"var(--tm)",textAlign:"center",lineHeight:1.85,paddingTop:8}}>
                   Supervisor evaluates each response in real time.<br/>
-                  <span style={{color:"var(--cyan)"}}>Submit your first response to begin.</span>
-                </div>
-                <div style={{paddingTop:12,borderTop:"1px solid rgba(255,255,255,.07)"}}>
-                  <div onClick={()=>setShowDbt(p=>!p)} style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--vio)",letterSpacing:"2px",cursor:"pointer",display:"flex",justifyContent:"space-between",userSelect:"none"}}>
-                    <span>DBT QUICK REFERENCE</span><span>{showDbt?"▲":"▼"}</span>
-                  </div>
-                  {showDbt&&(
-                    <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:7,animation:"fadeIn .3s ease"}}>
-                      {DBT_REF.map(([k,v])=>(
-                        <div key={k} style={{display:"flex",gap:8}}>
-                          <div style={{fontFamily:"var(--fm)",fontSize:10,color:"var(--vio)",minWidth:72,fontWeight:600,flexShrink:0}}>{k}</div>
-                          <div style={{fontFamily:"var(--fm)",fontSize:10,color:"rgba(232,240,255,.38)",lineHeight:1.55}}>{v}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <span style={{color:"var(--cyan)"}}>Submit your first response to begin.</span><br/><br/>
+                  <span style={{fontSize:10,color:"rgba(232,240,255,.4)"}}>Need a skills refresher? Tap DBT REF below the input.</span>
                 </div>
               </div>
             )}
@@ -967,8 +1083,7 @@ Respond ONLY as valid JSON (no markdown):
               </div>
               <textarea ref={inputRef} value={clinInput}
                 onChange={e=>e.target.value.length<=600 && setCliInput(e.target.value)}
-                onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!isProcessing){e.preventDefault();executeTurn();}}}
-                placeholder="Type your clinical response... (Enter to transmit, Shift+Enter for newline)"
+                placeholder="Type your clinical response, then press TRANSMIT to send..."
                 rows={3} disabled={isProcessing||isInit}/>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:7,paddingBottom:1}}>
@@ -1116,14 +1231,16 @@ Respond ONLY as valid JSON (no markdown):
   };
 
   /* ── Root ── */
+  // Order matters: Access gate → Disclaimer → App screens
   return (
     <div style={{minHeight:"100vh",fontFamily:"var(--fd)",color:"var(--tx)",position:"relative"}}>
       <Styles/>
       <Mesh/>
-      {!disclaimerAck && renderDisclaimer()}
-      {disclaimerAck && screen==="setup"      && renderSetup()}
-      {disclaimerAck && screen==="simulation" && renderSimulation()}
-      {disclaimerAck && screen==="report"     && renderReport()}
+      {!accessGranted && renderAccessGate()}
+      {accessGranted && !disclaimerAck && renderDisclaimer()}
+      {accessGranted && disclaimerAck && screen==="setup"      && renderSetup()}
+      {accessGranted && disclaimerAck && screen==="simulation" && renderSimulation()}
+      {accessGranted && disclaimerAck && screen==="report"     && renderReport()}
     </div>
   );
 }
