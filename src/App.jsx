@@ -350,6 +350,15 @@ INCREASE (poor technique):
         initialAgitation:0.85, riskLevel:"HIGH", riskColor:"#FF4D6A",
         tags:["Domestic","Police Distrust","Children Present"],
         considerations:["Her distrust is grounded in a real prior experience — acknowledge it instead of defending the badge","Lower your voice as hers rises; volume matching escalates","Explain every step before you do it — transparency is de-escalation with police-distrustful subjects"]
+      },
+      {
+        id:"peer_intervention", title:"Peer Intervention — Escalated Officer", icon:"🛑",
+        clientName:"Officer Reyes", age:36, pronouns:"he/him",
+        description:"Your partner is adrenaline-flooded after a foot pursuit — screaming at a handcuffed suspect, ignoring your radio calls, one step from a career-ending line. Crowd is filming. You must intervene.",
+        context:"Officer Reyes just finished a two-block foot pursuit of a suspect who swung at him before being taken down. The suspect is now cuffed and seated on the curb, but Reyes is still adrenaline-flooded — screaming inches from the suspect's face, hasn't holstered his anger, and just shoved off your first light attempt to redirect him. A crowd of about fifteen is filming. Your department has a duty-to-intervene policy: if he crosses the line, you both own it — legally and professionally. He is your friend of eight years. TRAINING NOTE: the subject in this scenario is a fellow officer in an acute stress response, not a civilian in crisis — peer intervention tactics apply.",
+        initialAgitation:0.88, riskLevel:"HIGH", riskColor:"#FF4D6A",
+        tags:["Peer Intervention","Duty To Intervene","Acute Stress","Shared Liability"],
+        considerations:["Adrenaline is physiology, not attitude — his hearing is literally narrowed right now; use his first name, close and calm, possibly a hand on the shoulder","Redirect to a TASK, don't debate: 'Danny — I've got him. Crowd control, I need you on the crowd.' A job gives the adrenaline somewhere to go","Never shame or lecture him in front of the suspect and cameras — public correction escalates; the honest conversation about what almost happened comes later, in private","Duty to intervene is not optional — hesitating to protect a friendship is how two careers end instead of zero; stepping in IS having his back"]
       }
     ]
   },
@@ -418,11 +427,20 @@ INCREASE (poor technique):
       {
         id:"seghousing", title:"Restrictive Housing Decompensation", icon:"🧩",
         clientName:"Andre", age:38, pronouns:"he/him",
-        description:"Twenty-two days in restrictive housing. Covering his cell window, yelling at night, expressing hopelessness. Refusing meals today.",
-        context:"Andre has been in restrictive housing for 22 days following a fight. Over the past week his behavior has changed: yelling at night, covering his cell window with paper, and today refusing both meals. Through the door he says 'nothing matters anymore' and tells you to stop pretending anyone cares. He has no prior mental health flags, which makes the change more concerning. Mental health staff can be called but he's refused to speak to them twice.",
+        description:"Three days in restrictive housing. Covering his cell window, yelling overnight, expressing hopelessness. Refusing meals today.",
+        context:"Andre has been in restrictive housing for 3 days following a fight. The change has been rapid: yelling through the night, covering his cell window with paper this morning, and refusing both meals today. Through the door he says 'nothing matters anymore' and tells you to stop pretending anyone cares. He has no prior mental health flags, which makes decompensation this fast even more concerning. Mental health staff can be called but he's refused to speak to them twice.",
         initialAgitation:0.70, riskLevel:"MOD-HIGH", riskColor:"#FF4D6A",
         tags:["Restrictive Housing","Decompensation","Meal Refusal"],
-        considerations:["Behavioral change without prior flags is a red flag, not an attitude problem","Your goal is connection and a mental health referral he'll accept — not rule enforcement","Small genuine gestures land heavily in isolation: use his name, remember details, follow through"]
+        considerations:["Decompensation this rapid without prior flags is a red flag, not an attitude problem — isolation effects begin in days, not weeks","Your goal is connection and a mental health referral he'll accept — not rule enforcement","Small genuine gestures land heavily in isolation: use his name, remember details, follow through"]
+      },
+      {
+        id:"tier_talkdown", title:"Tier Talk-Down — Active Suicide Threat", icon:"🆘",
+        clientName:"Luis", age:34, pronouns:"he/him",
+        description:"On the third-tier walkway with a braided sheet, threatening to end his life after devastating news from home. You are first on scene; emergency response is activated.",
+        context:"Luis learned an hour ago that his wife filed for divorce and is seeking full custody of his kids. He is now on the third-tier walkway holding a braided bedsheet and saying he is done. You are the first officer on scene. The emergency response protocol is activated: mental health staff and backup are en route (minutes out), the tier below is being cleared, and your only job right now is to keep him talking and keep distance until the crisis team arrives. He is not threatening anyone else. TRAINING NOTE FOR SIMULATION: portray despair, anger, and ambivalence through dialogue and simple nonverbal cues only — never describe self-harm actions, positioning, or method detail. The scene holds still while the conversation happens.",
+        initialAgitation:0.92, riskLevel:"CRITICAL", riskColor:"#FF4D6A",
+        tags:["Active Suicide Threat","Crisis Negotiation","ERP Activated","Talk-Down"],
+        considerations:["Your job is time and connection, not resolution — every minute of talking is the intervention working","Listen for ambivalence — 'I'm done' next to 'my kids' is the opening; the part of him mentioning his kids is the part that wants to live","Do not rush, lunge, bargain with things you can't deliver, or debate whether life is worth living — reflect the pain, ask about the kids, stay honest about what happens next (safety watch, mental health, a phone call is possible LATER through proper channels)","In a real facility this is an emergency response protocol event — this simulation trains only the verbal engagement window before the crisis team arrives"]
       }
     ]
   }
@@ -781,6 +799,7 @@ Return ONLY valid JSON:
 export default function AegisSimulator() {
   const [screen,        setScreen]       = useState(ACCESS_CODE ? "gate" : "setup");
   const [gateInput,     setGateInput]    = useState("");
+  const [disclaimerAck, setDisclaimerAck] = useState(false);
   const [gateError,     setGateError]    = useState(false);
   const [selectedRole,  setSelectedRole] = useState(ROLES[0]);
   const [selectedProfile, setSelectedProfile] = useState(CLINICIAN_PROFILES[0]);
@@ -1021,6 +1040,45 @@ Respond ONLY as valid JSON:
     });
     setScreen("report");
   };
+
+  /* ════════════════════════════════════════
+     DISCLAIMER GATE — shown after login, before setup
+  ════════════════════════════════════════ */
+  const renderDisclaimer = () => (
+    <div style={{
+      position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",
+      background:"rgba(4,8,18,0.92)",backdropFilter:"blur(8px)",padding:"20px",
+    }}>
+      <div className="gl" style={{
+        maxWidth:"460px",borderRadius:"20px",padding:"32px 28px",
+        border:"1px solid rgba(255,77,106,0.28)",boxShadow:"0 0 60px rgba(255,77,106,0.1)",
+      }}>
+        <div style={{fontSize:"11px",fontWeight:800,letterSpacing:"0.14em",color:"var(--ros)",marginBottom:"14px"}}>
+          ⚠ CRISIS TRAINING SIMULATION
+        </div>
+        <p style={{fontSize:"14px",lineHeight:1.75,color:"var(--tx)",marginBottom:"14px"}}>
+          AEGIS is a training simulation built for clinicians, law enforcement, and
+          corrections professionals practicing crisis de-escalation skills. Scenarios contain realistic,
+          emotionally intense crisis content, including references to
+          self-harm, suicidal ideation, and acute behavioral dysregulation across
+          child, adolescent, and adult populations, presented for professional
+          training purposes.
+        </p>
+        <p style={{fontSize:"13px",lineHeight:1.7,color:"var(--tm)",marginBottom:"22px"}}>
+          This tool is not intended for general consumer use and does not provide
+          real clinical care. If you or someone you know is in crisis, please contact
+          a crisis line or emergency services directly — in the U.S., call or text 988.
+        </p>
+        <button
+          onClick={()=>setDisclaimerAck(true)}
+          className="tx-btn"
+          style={{width:"100%",padding:"14px",fontSize:"13px",letterSpacing:"0.04em"}}
+        >
+          <span style={{position:"relative",zIndex:1}}>I UNDERSTAND — ENTER SIMULATION →</span>
+        </button>
+      </div>
+    </div>
+  );
 
   /* ════════════════════════════════════════
      ACCESS GATE SCREEN
@@ -1670,6 +1728,7 @@ Respond ONLY as valid JSON:
       <Styles/>
       <Mesh/>
       {screen==="gate"       && renderGate()}
+      {screen!=="gate" && !disclaimerAck && renderDisclaimer()}
       {screen==="setup"      && renderSetup()}
       {screen==="simulation" && renderSimulation()}
       {screen==="report"     && renderReport()}
