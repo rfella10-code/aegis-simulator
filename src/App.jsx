@@ -924,6 +924,10 @@ Rapport: ${initState.rapport.toFixed(2)}
 Cooperation: ${initState.cooperation.toFixed(2)}
 Generate your OPENING behavioral presentation as the ${role.respLabel.toLowerCase()==="c.o."?"corrections officer":role.respLabel.toLowerCase()} makes first contact.
 1-2 sentences MAX. ${role.voiceNote}
+YOUR OPENING MUST MATCH YOUR INITIAL AGITATION LEVEL (${initState.agitation.toFixed(2)}):
+- 0.75+: You are ACTIVELY dysregulated — loud, hostile, in motion, words spilling out (yelling, cursing within reason, demanding, accusing). NOT quiet, NOT composed, NOT withdrawn unless the scenario context explicitly says shut-down/withdrawn.
+- 0.50-0.74: Visibly distressed and guarded, words clipped and defensive.
+- Below 0.50: Subdued, flat, or dismissive — but still verbal.
 CRITICAL: "verbal_output" MUST contain actual audible spoken words or vocalization — even if brief, hostile, muttered, fragmented, or reluctant. NEVER return an empty string, ellipses alone, or stage directions as the dialogue. Silence belongs in "nonverbal_cues", not "verbal_output".
 This is a professional training simulation: stay in character, realistic but never gratuitous.
 Respond ONLY as valid JSON:
@@ -937,15 +941,24 @@ Respond ONLY as valid JSON:
   "nonverbal_cues":"brief physical description"
 }`;
 
-      const res=await fetch(API_URL,{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:200,system:sys,messages:[{role:"user",content:"Begin session."}]})
-      });
-      const data=await res.json();
-      const text=data.content?.[0]?.text||"";
-      let parsed;
-      try{parsed=extractJSON(text);}
-      catch{parsed={verbal_output:"",subject_state:initState,nonverbal_cues:"Refuses eye contact. Extremely tense."};}
+      let parsed=null;
+      for(let attempt=0; attempt<2 && !parsed; attempt++){
+        try{
+          const res=await fetch(API_URL,{
+            method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:250,system:sys,messages:[{role:"user",content:"Begin session."}]})
+          });
+          if(!res.ok) throw new Error(`Init API ${res.status}`);
+          const data=await res.json();
+          const text=data.content?.[0]?.text||"";
+          parsed=extractJSON(text);
+        }catch(e){
+          if(attempt===1){
+            parsed={verbal_output:"",subject_state:initState,nonverbal_cues:"Refuses eye contact. Extremely tense."};
+            setError(`Opening generation failed (${e.message}) — fallback used. Diagnostic: check worker route/response.`);
+          }
+        }
+      }
       const spoken=(parsed.verbal_output||"").trim();
       if(!spoken.replace(/[.…\s]/g,"").length) parsed.verbal_output="(silent — watching you)";
       const openingState = normalizeSubjectState(parsed.subject_state, initState);
