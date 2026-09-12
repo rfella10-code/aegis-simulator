@@ -34,6 +34,16 @@ const Styles = () => (
     @keyframes ring{0%{opacity:.7;transform:scale(1)}100%{opacity:0;transform:scale(2)}}
     @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
     @keyframes agiPulse{0%,100%{opacity:.7}50%{opacity:1}}
+    .orbA{animation:orb1 24s ease-in-out infinite;will-change:transform}
+    .orbB{animation:orb2 28s ease-in-out infinite;will-change:transform}
+    .breathe-t{animation:breathe 5s ease-in-out infinite}
+    /* ── Mobile performance mode: touch devices skip backdrop blur + ambient
+       animation so scrolling stays smooth. Desktop keeps the full effect. ── */
+    @media (hover:none) and (pointer:coarse){
+      .orbA,.orbB,.breathe-t{animation:none}
+      .gl{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(9,14,26,.88)}
+      .tx-btn::after{display:none}
+    }
     .sc{animation:fsu .5s cubic-bezier(.22,1,.36,1) both}
     .s1{animation:fsu .5s .06s cubic-bezier(.22,1,.36,1) both}
     .s2{animation:fsu .5s .12s cubic-bezier(.22,1,.36,1) both}
@@ -124,8 +134,8 @@ const ACCESS_CODE = "AEGIS2026";
 
 const Mesh = () => (
   <div style={{position:"fixed",inset:0,overflow:"hidden",zIndex:0,background:"#040812"}}>
-    <div style={{position:"absolute",width:800,height:800,borderRadius:"50%",background:"radial-gradient(circle,rgba(0,212,255,.09) 0%,transparent 70%)",top:"-15%",left:"-10%",animation:"orb1 24s ease-in-out infinite"}}/>
-    <div style={{position:"absolute",width:600,height:600,borderRadius:"50%",background:"radial-gradient(circle,rgba(0,255,178,.07) 0%,transparent 70%)",bottom:"5%",right:"-8%",animation:"orb2 28s ease-in-out infinite"}}/>
+    <div className="orbA" style={{position:"absolute",width:800,height:800,borderRadius:"50%",background:"radial-gradient(circle,rgba(0,212,255,.09) 0%,transparent 70%)",top:"-15%",left:"-10%"}}/>
+    <div className="orbB" style={{position:"absolute",width:600,height:600,borderRadius:"50%",background:"radial-gradient(circle,rgba(0,255,178,.07) 0%,transparent 70%)",bottom:"5%",right:"-8%"}}/>
     <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at center,rgba(4,8,18,.3) 0%,rgba(4,8,18,.92) 100%)"}}/>
     <div style={{position:"absolute",inset:0,background:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.025) 2px,rgba(0,0,0,.025) 4px)",pointerEvents:"none"}}/>
   </div>
@@ -665,6 +675,7 @@ ${difficulty==="advanced"
 
 RESPONSE RULES:
 - ${role.voiceNote}
+- "verbal_output" MUST contain actual audible spoken words or vocalization — even brief, hostile, muttered, or fragmented. NEVER an empty string, ellipses alone, or stage directions. Silence belongs in "nonverbal_cues".
 - Do NOT act like a textbook.
 - Be emotionally and behaviorally believable.
 - Keep this a professional training simulation and never become gratuitous.
@@ -694,8 +705,9 @@ RESPONSE RULES:
   const text = data.content?.[0]?.text || "";
   try {
     const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+    const spoken = (parsed.verbal_output || "").trim();
     return {
-      verbal_output: parsed.verbal_output || "...",
+      verbal_output: spoken.replace(/[.…\s]/g,"").length ? spoken : "(silent — watching you)",
       subject_state: normalizeSubjectState(parsed.subject_state, subjectState),
       nonverbal_cues: parsed.nonverbal_cues || ""
     };
@@ -895,6 +907,7 @@ Rapport: ${initState.rapport.toFixed(2)}
 Cooperation: ${initState.cooperation.toFixed(2)}
 Generate your OPENING behavioral presentation as the ${role.respLabel.toLowerCase()==="c.o."?"corrections officer":role.respLabel.toLowerCase()} makes first contact.
 1-2 sentences MAX. ${role.voiceNote}
+CRITICAL: "verbal_output" MUST contain actual audible spoken words or vocalization — even if brief, hostile, muttered, fragmented, or reluctant. NEVER return an empty string, ellipses alone, or stage directions as the dialogue. Silence belongs in "nonverbal_cues", not "verbal_output".
 This is a professional training simulation: stay in character, realistic but never gratuitous.
 Respond ONLY as valid JSON:
 {
@@ -915,7 +928,9 @@ Respond ONLY as valid JSON:
       const text=data.content?.[0]?.text||"";
       let parsed;
       try{parsed=JSON.parse(text.replace(/```json|```/g,"").trim());}
-      catch{parsed={verbal_output:"...",subject_state:initState,nonverbal_cues:"Refuses eye contact. Extremely tense."};}
+      catch{parsed={verbal_output:"",subject_state:initState,nonverbal_cues:"Refuses eye contact. Extremely tense."};}
+      const spoken=(parsed.verbal_output||"").trim();
+      if(!spoken.replace(/[.…\s]/g,"").length) parsed.verbal_output="(silent — watching you)";
       const openingState = normalizeSubjectState(parsed.subject_state, initState);
       setAgitation(openingState.agitation);
       setSubjectState(openingState);
@@ -1087,7 +1102,7 @@ Respond ONLY as valid JSON:
     <div style={{minHeight:"100vh",position:"relative",zIndex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
       <div className="gl sc" style={{borderRadius:24,padding:"40px 36px",maxWidth:400,width:"100%",textAlign:"center"}}>
         <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><AegisLogo size={76}/></div>
-        <div style={{fontFamily:"var(--fd)",fontSize:44,fontWeight:800,letterSpacing:"-2px",marginBottom:8,animation:"breathe 5s ease-in-out infinite"}}>AEGIS</div>
+        <div className="breathe-t" style={{fontFamily:"var(--fd)",fontSize:44,fontWeight:800,letterSpacing:"-2px",marginBottom:8}}>AEGIS</div>
         <div style={{fontFamily:"var(--fm)",fontSize:10,color:"var(--tm)",letterSpacing:"3px",textTransform:"uppercase",marginBottom:24}}>Restricted Access</div>
         <input type="password" value={gateInput}
           onChange={e=>{setGateInput(e.target.value);setGateError(false);}}
@@ -1116,7 +1131,7 @@ Respond ONLY as valid JSON:
           <span style={{fontFamily:"var(--fm)",fontSize:10,color:"#FF4D6A",letterSpacing:"2.5px"}}>SIMULATION SYSTEM ONLINE</span>
         </div>
         <div style={{display:"flex",justifyContent:"center",marginBottom:18}}><AegisLogo size={108}/></div>
-        <div style={{fontFamily:"var(--fd)",fontSize:72,fontWeight:800,letterSpacing:"-4px",lineHeight:.9,marginBottom:16,animation:"breathe 5s ease-in-out infinite"}}>
+        <div className="breathe-t" style={{fontFamily:"var(--fd)",fontSize:72,fontWeight:800,letterSpacing:"-4px",lineHeight:.9,marginBottom:16}}>
           AEGIS
         </div>
         <div style={{fontFamily:"var(--fm)",fontSize:11,color:"var(--tm)",letterSpacing:"4px",marginBottom:18,textTransform:"uppercase"}}>Crisis De-escalation Engine · v3.1</div>
@@ -1297,7 +1312,7 @@ Respond ONLY as valid JSON:
           <div style={{display:"flex",alignItems:"center",gap:14}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <AegisLogo size={26} glow={false}/>
-              <div style={{fontFamily:"var(--fd)",fontSize:19,fontWeight:800,color:"var(--cyan)",letterSpacing:"-1px",animation:"breathe 5s ease-in-out infinite"}}>AEGIS</div>
+              <div className="breathe-t" style={{fontFamily:"var(--fd)",fontSize:19,fontWeight:800,color:"var(--cyan)",letterSpacing:"-1px"}}>AEGIS</div>
             </div>
             <div style={{width:1,height:22,background:"rgba(255,255,255,.12)"}}/>
             <div>
