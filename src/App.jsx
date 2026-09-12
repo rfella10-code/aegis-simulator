@@ -536,6 +536,23 @@ const normalizeSubjectState = (candidate, previous) => ({
   cooperation: Math.max(0, Math.min(1, Number.isFinite(candidate?.cooperation) ? candidate.cooperation : previous.cooperation)),
 });
 
+// Anthropic Messages API requires the first message to be role "user".
+// The actor's history starts with its own opening (assistant), so trim
+// any leading assistant turns after slicing the window.
+const trimHistory = (history, n=10) => {
+  const t = history.slice(-n);
+  while (t.length && t[0].role !== "user") t.shift();
+  return t;
+};
+
+// Models occasionally wrap JSON in prose or fences — extract the outermost
+// JSON object before parsing instead of failing to a fallback.
+const extractJSON = (text) => {
+  const cleaned = (text || "").replace(/```json|```/g, "").trim();
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  return JSON.parse(match ? match[0] : cleaned);
+};
+
 const computeCriticalMoments = (logs, stateHistory) => {
   const moments = [];
   logs.forEach((log, i) => {
@@ -697,14 +714,14 @@ RESPONSE RULES:
       model:"claude-sonnet-4-20250514",
       max_tokens:350,
       system,
-      messages:[...apiHistory.slice(-10),{role:"user",content:responderInput}]
+      messages:[...trimHistory(apiHistory),{role:"user",content:responderInput}]
     })
   });
   if (!res.ok) throw new Error(`Actor API ${res.status}`);
   const data = await res.json();
   const text = data.content?.[0]?.text || "";
   try {
-    const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+    const parsed = extractJSON(text);
     const spoken = (parsed.verbal_output || "").trim();
     return {
       verbal_output: spoken.replace(/[.…\s]/g,"").length ? spoken : "(silent — watching you)",
@@ -782,7 +799,7 @@ Return ONLY valid JSON:
   const data = await res.json();
   const text = data.content?.[0]?.text || "";
   try {
-    const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+    const parsed = extractJSON(text);
     const safeDimensions = {...getDimensionTemplate(role.id), ...(parsed.dimensions || {})};
     Object.keys(safeDimensions).forEach(k=>{
       safeDimensions[k] = Math.max(0,Math.min(1,Number(safeDimensions[k]) || 0));
@@ -927,7 +944,7 @@ Respond ONLY as valid JSON:
       const data=await res.json();
       const text=data.content?.[0]?.text||"";
       let parsed;
-      try{parsed=JSON.parse(text.replace(/```json|```/g,"").trim());}
+      try{parsed=extractJSON(text);}
       catch{parsed={verbal_output:"",subject_state:initState,nonverbal_cues:"Refuses eye contact. Extremely tense."};}
       const spoken=(parsed.verbal_output||"").trim();
       if(!spoken.replace(/[.…\s]/g,"").length) parsed.verbal_output="(silent — watching you)";
@@ -937,11 +954,12 @@ Respond ONLY as valid JSON:
       setAgiHistory([openingState.agitation]);
       setStateHistory([openingState]);
       setConversation([{id:Date.now(),role:"actor",content:parsed.verbal_output,nonverbal:parsed.nonverbal_cues||"",agitation:openingState.agitation,subjectState:openingState,coachScore:null}]);
-      setApiHistory([{role:"assistant",content:parsed.verbal_output}]);
+      setApiHistory([{role:"user",content:"Begin session."},{role:"assistant",content:parsed.verbal_output}]);
     } catch(err){
       setError("Initialization error: "+err.message);
       setSubjectState(initState);
       setStateHistory([initState]);
+      setApiHistory([]);
       setConversation([{id:Date.now(),role:"actor",content:"...",nonverbal:"Refuses eye contact. Extremely tense.",agitation:initAgi,subjectState:initState,coachScore:null}]);
     }
     setIsInit(false);
@@ -1302,7 +1320,9 @@ Respond ONLY as valid JSON:
   ════════════════════════════════════════ */
   const renderSimulation = () => {
     const sc=selectedSc;
-    const agiColor=agitation>=0.75?"#FF4D6A":agitation>=0.5?"#FFB800":"#00FFB2";
+    const agiColor = trainingMode==="assessment"
+      ? "rgba(232,240,255,.35)"
+      : agitation>=0.75?"#FF4D6A":agitation>=0.5?"#FFB800":"#00FFB2";
 
     return (
       <div style={{minHeight:"100vh",position:"relative",zIndex:1,display:"flex",flexDirection:"column"}}>
