@@ -122,7 +122,7 @@ const WORKER_URL = "https://aegis-proxy.r-fella10.workers.dev";
 // - Everywhere else (Vercel live deploy), calls route through the Cloudflare Worker,
 //   which injects the API key server-side and handles CORS.
 const IS_ARTIFACT = typeof window !== "undefined" && /claude/i.test(window.location.hostname);
-const API_URL = IS_ARTIFACT ? "https://api.anthropic.com/v1/messages" : WORKER_URL;
+const API_URL = IS_ARTIFACT ? "https://api.anthropic.com/v1/messages" : `${WORKER_URL}/claude`;
 
 // ─────────────────────────────────────────────────────────────
 // !! ACCESS CODE — change this before sharing the app !!
