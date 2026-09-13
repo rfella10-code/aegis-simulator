@@ -122,7 +122,39 @@ const WORKER_URL = "https://aegis-proxy.r-fella10.workers.dev";
 // - Everywhere else (Vercel live deploy), calls route through the Cloudflare Worker,
 //   which injects the API key server-side and handles CORS.
 const IS_ARTIFACT = typeof window !== "undefined" && /claude/i.test(window.location.hostname);
-const API_URL = IS_ARTIFACT ? "https://api.anthropic.com/v1/messages" : `${WORKER_URL}/claude`;
+const DIRECT_URL = "https://api.anthropic.com/v1/messages";
+
+// Worker route auto-discovery: different proxy builds expose the endpoint on
+// different paths. On the first live call we try each candidate and remember
+// whichever one actually answers, so the app self-heals if the route changes.
+const ROUTE_CANDIDATES = ["/claude","","/api","/api/claude","/v1/messages","/messages","/chat","/proxy","/anthropic"];
+let RESOLVED_URL = null;
+
+async function callAPI(body){
+  if (IS_ARTIFACT) {
+    const res = await fetch(DIRECT_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!res.ok) throw new Error(`API ${res.status}`);
+    return res.json();
+  }
+  const tryOne = async (url) => fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+
+  if (RESOLVED_URL) {
+    const res = await tryOne(RESOLVED_URL);
+    if (res.ok) return res.json();
+    if (res.status !== 404) throw new Error(`API ${res.status}`);
+    RESOLVED_URL = null; // route changed — rediscover
+  }
+  let lastStatus = 0;
+  for (const path of ROUTE_CANDIDATES) {
+    const url = `${WORKER_URL}${path}`;
+    let res;
+    try { res = await tryOne(url); } catch { continue; }
+    if (res.ok) { RESOLVED_URL = url; return res.json(); }
+    lastStatus = res.status;
+    if (res.status !== 404) throw new Error(`API ${res.status}`); // real error, not a wrong path
+  }
+  throw new Error(`No working proxy route (last status ${lastStatus})`);
+}
 
 // ─────────────────────────────────────────────────────────────
 // !! ACCESS CODE — change this before sharing the app !!
@@ -707,18 +739,12 @@ RESPONSE RULES:
   "nonverbal_cues":"brief physical observation"
 }`;
 
-  const res = await fetch(API_URL,{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      model:"claude-sonnet-4-20250514",
-      max_tokens:350,
-      system,
-      messages:[...trimHistory(apiHistory),{role:"user",content:responderInput}]
-    })
-  });
-  if (!res.ok) throw new Error(`Actor API ${res.status}`);
-  const data = await res.json();
+  const data = await callAPI({
+    model:"claude-sonnet-4-20250514",
+    max_tokens:350,
+    system,
+    messages:[...trimHistory(apiHistory),{role:"user",content:responderInput}]
+  }).catch(e=>{throw new Error(`Actor ${e.message}`);});
   const text = data.content?.[0]?.text || "";
   try {
     const parsed = extractJSON(text);
@@ -785,18 +811,12 @@ Return ONLY valid JSON:
   "skills_missed":["up to 3"]
 }`;
 
-  const res = await fetch(API_URL,{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      model:"claude-sonnet-4-20250514",
-      max_tokens:550,
-      system,
-      messages:[{role:"user",content:"Evaluate this trainee response now."}]
-    })
-  });
-  if (!res.ok) throw new Error(`Coach API ${res.status}`);
-  const data = await res.json();
+  const data = await callAPI({
+    model:"claude-sonnet-4-20250514",
+    max_tokens:550,
+    system,
+    messages:[{role:"user",content:"Evaluate this trainee response now."}]
+  }).catch(e=>{throw new Error(`Coach ${e.message}`);});
   const text = data.content?.[0]?.text || "";
   try {
     const parsed = extractJSON(text);
@@ -944,12 +964,7 @@ Respond ONLY as valid JSON:
       let parsed=null;
       for(let attempt=0; attempt<2 && !parsed; attempt++){
         try{
-          const res=await fetch(API_URL,{
-            method:"POST",headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:250,system:sys,messages:[{role:"user",content:"Begin session."}]})
-          });
-          if(!res.ok) throw new Error(`Init API ${res.status}`);
-          const data=await res.json();
+          const data=await callAPI({model:"claude-sonnet-4-20250514",max_tokens:250,system:sys,messages:[{role:"user",content:"Begin session."}]});
           const text=data.content?.[0]?.text||"";
           parsed=extractJSON(text);
         }catch(e){
