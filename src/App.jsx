@@ -127,33 +127,38 @@ const DIRECT_URL = "https://api.anthropic.com/v1/messages";
 // Worker route auto-discovery: different proxy builds expose the endpoint on
 // different paths. On the first live call we try each candidate and remember
 // whichever one actually answers, so the app self-heals if the route changes.
-const ROUTE_CANDIDATES = ["/claude","","/api","/api/claude","/v1/messages","/messages","/chat","/proxy","/anthropic"];
+const ROUTE_CANDIDATES = ["","/claude","/api","/api/claude","/v1/messages","/messages","/chat","/proxy","/anthropic"];
+// Model fallback: a 404 from the API can mean "model not found", not a bad route.
+// Try current model ids in order and remember whichever the account can use.
+const MODEL_CANDIDATES = ["claude-sonnet-4-5","claude-sonnet-4-20250514","claude-3-5-sonnet-latest","claude-haiku-4-5-20251001"];
 let RESOLVED_URL = null;
+let RESOLVED_MODEL = null;
 
 async function callAPI(body){
-  if (IS_ARTIFACT) {
-    const res = await fetch(DIRECT_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    if(!res.ok) throw new Error(`API ${res.status}`);
-    return res.json();
-  }
-  const tryOne = async (url) => fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const post = (url, payload) => fetch(url,{
+    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)
+  });
+  const base = IS_ARTIFACT ? [DIRECT_URL] : (RESOLVED_URL ? [RESOLVED_URL] : ROUTE_CANDIDATES.map(p=>`${WORKER_URL}${p}`));
+  const models = RESOLVED_MODEL ? [RESOLVED_MODEL] : MODEL_CANDIDATES;
 
-  if (RESOLVED_URL) {
-    const res = await tryOne(RESOLVED_URL);
-    if (res.ok) return res.json();
-    if (res.status !== 404) throw new Error(`API ${res.status}`);
-    RESOLVED_URL = null; // route changed — rediscover
+  let lastStatus = 0, lastDetail = "";
+  for (const url of base) {
+    for (const model of models) {
+      let res;
+      try { res = await post(url, {...body, model}); } catch { break; } // network/CORS — try next url
+      if (res.ok) { RESOLVED_URL = url; RESOLVED_MODEL = model; return res.json(); }
+      lastStatus = res.status;
+      try { lastDetail = (await res.text()).slice(0,160); } catch { lastDetail = ""; }
+      if (res.status === 404) continue;              // could be bad model OR bad path — keep trying
+      if (res.status === 401 || res.status === 403)  // credential problem, not a route problem
+        throw new Error(`auth error ${res.status}: ${lastDetail}`);
+      if (res.status >= 500) continue;               // transient upstream — try next combo
+      throw new Error(`API ${res.status}: ${lastDetail}`);
+    }
   }
-  let lastStatus = 0;
-  for (const path of ROUTE_CANDIDATES) {
-    const url = `${WORKER_URL}${path}`;
-    let res;
-    try { res = await tryOne(url); } catch { continue; }
-    if (res.ok) { RESOLVED_URL = url; return res.json(); }
-    lastStatus = res.status;
-    if (res.status !== 404) throw new Error(`API ${res.status}`); // real error, not a wrong path
-  }
-  throw new Error(`No working proxy route (last status ${lastStatus})`);
+  // Reset so the next attempt rediscovers from scratch.
+  RESOLVED_URL = null; RESOLVED_MODEL = null;
+  throw new Error(`API ${lastStatus}${lastDetail ? " — " + lastDetail : ""}`);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -740,7 +745,6 @@ RESPONSE RULES:
 }`;
 
   const data = await callAPI({
-    model:"claude-sonnet-4-20250514",
     max_tokens:350,
     system,
     messages:[...trimHistory(apiHistory),{role:"user",content:responderInput}]
@@ -812,7 +816,6 @@ Return ONLY valid JSON:
 }`;
 
   const data = await callAPI({
-    model:"claude-sonnet-4-20250514",
     max_tokens:550,
     system,
     messages:[{role:"user",content:"Evaluate this trainee response now."}]
@@ -964,7 +967,7 @@ Respond ONLY as valid JSON:
       let parsed=null;
       for(let attempt=0; attempt<2 && !parsed; attempt++){
         try{
-          const data=await callAPI({model:"claude-sonnet-4-20250514",max_tokens:250,system:sys,messages:[{role:"user",content:"Begin session."}]});
+          const data=await callAPI({max_tokens:250,system:sys,messages:[{role:"user",content:"Begin session."}]});
           const text=data.content?.[0]?.text||"";
           parsed=extractJSON(text);
         }catch(e){
