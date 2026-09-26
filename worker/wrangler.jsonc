@@ -8,10 +8,10 @@
   "compatibility_date": "2025-09-01",
   "observability": { "enabled": true },
   "vars": {
-    // Comma-separated list of sites allowed to call this Worker.
-    // "*" allows any site. Tighten to your real app address once it's final,
-    // e.g. "https://aegis.yourdomain.com,https://aegis-simulator.vercel.app"
-    "ALLOWED_ORIGINS": "*"
+    // Sites allowed to call this Worker (comma-separated). "*" inside an entry
+    // matches one part of the address, so the second entry covers Vercel
+    // branch previews. Add a custom domain here if you connect one.
+    "ALLOWED_ORIGINS": "https://aegis-sim-snowy.vercel.app,https://aegis-sim-*-rfella10-codes-projects.vercel.app"
   }
-  // Secret (set in the dashboard, never here): ANTHROPIC_API_KEY
+  // Secrets (set in the dashboard, never here): ANTHROPIC_API_KEY, ACCESS_CODE
 }
