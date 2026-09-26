@@ -1,0 +1,17 @@
+{
+  // AEGIS API Worker. Deploy from the Cloudflare dashboard:
+  // Workers & Pages → Create → Import a repository → aegis-simulator,
+  // with Root directory set to "worker". See worker/README.md.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aegis-api",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  "observability": { "enabled": true },
+  "vars": {
+    // Comma-separated list of sites allowed to call this Worker.
+    // "*" allows any site. Tighten to your real app address once it's final,
+    // e.g. "https://aegis.yourdomain.com,https://aegis-simulator.vercel.app"
+    "ALLOWED_ORIGINS": "*"
+  }
+  // Secret (set in the dashboard, never here): ANTHROPIC_API_KEY
+}

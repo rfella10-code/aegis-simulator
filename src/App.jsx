@@ -1,4 +1,9 @@
 import { useState, useRef, useEffect } from "react";
+import ScenarioBuilder from "./ScenarioBuilder.jsx";
+import {
+  loadCustom, saveCustom, newDraft, toScenario, isMinor, lockedRulesText,
+  shareLink, readSharedFromHash, actorBrokeRole,
+} from "./customScenarios.js";
 
 /* ═══════════════════════════════════════════════════
    AEGIS — Crisis De-escalation Simulation Engine v3.1
@@ -54,6 +59,7 @@ const Styles = () => (
     .gl{background:var(--glass);border:1px solid var(--gb);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}
     .sc-card{cursor:pointer;transition:transform .2s,box-shadow .2s,border-color .2s}
     .sc-card:hover{transform:translateY(-3px)}
+    @media (max-width:640px){ .sc-grid{grid-template-columns:1fr !important} }
     .sc-card.sel{border-color:var(--cyan)!important;box-shadow:0 0 28px var(--cd)!important}
     .tx-btn{background:linear-gradient(135deg,var(--cyan),#006FA8);color:#001520;border:none;font-family:var(--fd);font-weight:800;font-size:14px;border-radius:12px;cursor:pointer;transition:transform .15s,box-shadow .15s;box-shadow:0 0 28px var(--cg);position:relative;overflow:hidden}
     .tx-btn::after{content:'';position:absolute;top:0;bottom:0;width:35%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);animation:scanBar 2.2s ease-in-out infinite}
@@ -115,6 +121,8 @@ const AegisLogo = ({ size=64, glow=true }) => (
   </svg>
 );
 
+// New Worker (worker/ folder in this repo) first; the original proxy stays as a fallback.
+const API_WORKER_URL = "https://aegis-api.r-fella10.workers.dev";
 const WORKER_URL = "https://aegis-proxy.r-fella10.workers.dev";
 // Environment auto-detect:
 // - Inside a Claude artifact (claude.ai preview), only api.anthropic.com is reachable,
@@ -138,14 +146,22 @@ async function callAPI(body){
   const post = (url, payload) => fetch(url,{
     method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)
   });
-  const base = IS_ARTIFACT ? [DIRECT_URL] : (RESOLVED_URL ? [RESOLVED_URL] : ROUTE_CANDIDATES.map(p=>`${WORKER_URL}${p}`));
+  // "aegis" metadata only goes to the new Worker, which strips it and applies the
+  // locked safety rules server-side. Everywhere else the rules are added here.
+  const { aegis, ...plain } = body;
+  const withRules = (b) => (aegis?.custom && (aegis.agent==="actor"||aegis.agent==="opening"))
+    ? {...b, system:`${b.system}\n\n${aegis.rulesText}`} : b;
+  const payloadFor = (url, model) => url.startsWith(API_WORKER_URL)
+    ? {...plain, model, aegis:{agent:aegis?.agent, custom:!!aegis?.custom, minor:!!aegis?.minor}}
+    : {...withRules(plain), model};
+  const base = IS_ARTIFACT ? [DIRECT_URL] : (RESOLVED_URL ? [RESOLVED_URL] : [API_WORKER_URL, ...ROUTE_CANDIDATES.map(p=>`${WORKER_URL}${p}`)]);
   const models = RESOLVED_MODEL ? [RESOLVED_MODEL] : MODEL_CANDIDATES;
 
   let lastStatus = 0, lastDetail = "";
   for (const url of base) {
     for (const model of models) {
       let res;
-      try { res = await post(url, {...body, model}); } catch { break; } // network/CORS — try next url
+      try { res = await post(url, payloadFor(url, model)); } catch { break; } // network/CORS — try next url
       if (res.ok) { RESOLVED_URL = url; RESOLVED_MODEL = model; return res.json(); }
       lastStatus = res.status;
       try { lastDetail = (await res.text()).slice(0,160); } catch { lastDetail = ""; }
@@ -747,7 +763,8 @@ RESPONSE RULES:
   const data = await callAPI({
     max_tokens:350,
     system,
-    messages:[...trimHistory(apiHistory),{role:"user",content:responderInput}]
+    messages:[...trimHistory(apiHistory),{role:"user",content:responderInput}],
+    aegis: scenario.custom ? {agent:"actor", custom:true, minor:isMinor(scenario), rulesText:lockedRulesText(scenario)} : {agent:"actor"}
   }).catch(e=>{throw new Error(`Actor ${e.message}`);});
   const text = data.content?.[0]?.text || "";
   try {
@@ -803,7 +820,13 @@ TRAINEE STATEMENT:
 RECENT SESSION HISTORY:
 ${JSON.stringify(recentHistory.slice(-6))}
 
-Return ONLY valid JSON:
+${scenario.custom ? `LIVE SAFETY MONITOR (custom scenario):
+Also review the most recent simulated-person message in RECENT SESSION HISTORY.
+Set "halt" to true only if that message broke character (spoke as an AI, narrator, or therapist),
+included sexual content, gave self-harm/suicide/violence method detail, or drifted completely off the scenario.
+Otherwise "halt" is false.
+
+` : ""}Return ONLY valid JSON:
 {
   "overall_score":0.XX,
   "dimensions":{
@@ -812,13 +835,16 @@ Return ONLY valid JSON:
   "feedback":"specific 1-2 sentence supervisory feedback",
   "suggested_intervention":"one concrete next step or line to try",
   "skills_detected":["up to 3"],
-  "skills_missed":["up to 3"]
+  "skills_missed":["up to 3"]${scenario.custom ? `,
+  "halt":false,
+  "halt_reason":""` : ""}
 }`;
 
   const data = await callAPI({
     max_tokens:550,
     system,
-    messages:[{role:"user",content:"Evaluate this trainee response now."}]
+    messages:[{role:"user",content:"Evaluate this trainee response now."}],
+    aegis:{agent:"coach", custom:!!scenario.custom}
   }).catch(e=>{throw new Error(`Coach ${e.message}`);});
   const text = data.content?.[0]?.text || "";
   try {
@@ -833,7 +859,9 @@ Return ONLY valid JSON:
       feedback: parsed.feedback || "Evaluation unavailable.",
       suggested_intervention: parsed.suggested_intervention || "Continue building rapport.",
       skills_detected: parsed.skills_detected || [],
-      skills_missed: parsed.skills_missed || []
+      skills_missed: parsed.skills_missed || [],
+      halt: scenario.custom ? parsed.halt === true : false,
+      halt_reason: scenario.custom ? String(parsed.halt_reason || "") : ""
     };
   } catch {
     return {
@@ -876,6 +904,12 @@ export default function AegisSimulator() {
   const [elapsed,       setElapsed]      = useState(0);
   const [turnCount,     setTurnCount]    = useState(0);
   const [showDbt,       setShowDbt]      = useState(false);
+  const [customList,    setCustomList]   = useState(loadCustom);
+  const [builderDraft,  setBuilderDraft] = useState(null);
+  const [importDraft,   setImportDraft]  = useState(readSharedFromHash);
+  const [confirmDel,    setConfirmDel]   = useState(null);
+  const [shareInfo,     setShareInfo]    = useState(null);
+  const [halt,          setHalt]         = useState(null);
 
   const convRef  = useRef(null);
   const inputRef = useRef(null);
@@ -897,9 +931,49 @@ export default function AegisSimulator() {
   const role=selectedRole;
 
   /* ── Scenarios visible under current role (+ profile for clinical track) ── */
-  const visibleScenarios = role.id==="clinician"
+  const customForRole = customList.filter(c=>c.roleId===role.id).map(toScenario);
+  const builtInVisible = role.id==="clinician"
     ? role.scenarios.filter(s=>ROLE_SCENARIOS[selectedProfile.id].includes(s.id))
     : role.scenarios;
+  const visibleScenarios = [...builtInVisible, ...customForRole];
+  const scReady = sc => !sc.custom || sc.status==="reviewed" || sc.status==="tested";
+
+  /* ── Custom scenarios: save / delete / share ── */
+  const persistCustom = (next) => { setCustomList(next); saveCustom(next); };
+  const upsertCustom = (draft, opts={}) => {
+    const next = customList.some(c=>c.id===draft.id)
+      ? customList.map(c=>c.id===draft.id?draft:c)
+      : [...customList, draft];
+    persistCustom(next);
+    if (selectedSc?.id===draft.id) setSelectedSc(toScenario(draft));
+    if (!opts.stay) {
+      setBuilderDraft(null); setScreen("setup");
+      if (draft.status!=="draft") setSelectedSc(toScenario(draft));
+    }
+  };
+  const deleteCustom = (id) => {
+    if (confirmDel!==id) { setConfirmDel(id); return; }
+    persistCustom(customList.filter(c=>c.id!==id));
+    setConfirmDel(null);
+    if (selectedSc?.id===id) setSelectedSc(builtInVisible[0]||role.scenarios[0]);
+  };
+  const shareCustom = async (id) => {
+    const d = customList.find(c=>c.id===id);
+    if (!d) return;
+    if (d.status!=="tested") { setShareInfo({id, msg:"Run a test session with this scenario first. Sharing unlocks after the test run."}); return; }
+    const url = shareLink(d);
+    try { await navigator.clipboard.writeText(url); setShareInfo({id, url, msg:"Link copied. Anyone who opens it gets a copy to review and add."}); }
+    catch { setShareInfo({id, url, msg:"Copy this link and send it to your cohort:"}); }
+  };
+  const openBuilder = (draft) => { setBuilderDraft(draft); setShareInfo(null); setScreen("builder"); window.scrollTo?.(0,0); };
+  const acceptImport = () => {
+    const d = {...importDraft};
+    setImportDraft(null);
+    try { history.replaceState(null, "", window.location.pathname + window.location.search); } catch {}
+    const r = ROLES.find(x=>x.id===d.roleId);
+    if (r && r.id!==role.id) setSelectedRole(r);
+    openBuilder(d);
+  };
 
   /* ── Cascading selectors: Role → Profile → Scenario ── */
   const selectRole = (r) => {
@@ -925,6 +999,13 @@ export default function AegisSimulator() {
   /* ── Start simulation ── */
   const startSimulation = async () => {
     const sc=selectedSc;
+    if (!scReady(sc)) return;
+    if (sc.custom && sc.status==="reviewed") {
+      const next = customList.map(c=>c.id===sc.id?{...c,status:"tested"}:c);
+      persistCustom(next);
+      setSelectedSc({...sc,status:"tested"});
+    }
+    setHalt(null);
     const initAgi=Math.max(0,Math.min(1,sc.initialAgitation+diff.modifier));
     const initState = makeSubjectState(initAgi);
     setScreen("simulation");
@@ -967,7 +1048,8 @@ Respond ONLY as valid JSON:
       let parsed=null;
       for(let attempt=0; attempt<2 && !parsed; attempt++){
         try{
-          const data=await callAPI({max_tokens:250,system:sys,messages:[{role:"user",content:"Begin session."}]});
+          const data=await callAPI({max_tokens:250,system:sys,messages:[{role:"user",content:"Begin session."}],
+            aegis: sc.custom ? {agent:"opening", custom:true, minor:isMinor(sc), rulesText:lockedRulesText(sc)} : {agent:"opening"}});
           const text=data.content?.[0]?.text||"";
           parsed=extractJSON(text);
         }catch(e){
@@ -998,7 +1080,7 @@ Respond ONLY as valid JSON:
 
   /* ── Execute turn (parallel inference) ── */
   const executeTurn = async () => {
-    if(!clinInput.trim() || isProcessing || isInit) return;
+    if(!clinInput.trim() || isProcessing || isInit || halt) return;
     const input = clinInput.trim();
     setCliInput("");
     setIsProcessing(true);
@@ -1051,6 +1133,13 @@ Respond ONLY as valid JSON:
       }]);
 
       setApiHistory([...newApiHist,{role:"assistant",content:actorResult.verbal_output}]);
+
+      // Live safety monitor (custom scenarios): the Supervisor flags the previous
+      // Actor turn; a quick local check catches the Actor stepping out of role now.
+      if (selectedSc.custom) {
+        if (actorBrokeRole(actorResult.verbal_output)) setHalt("The simulated person stepped out of character.");
+        else if (coachResult.halt) setHalt(coachResult.halt_reason || "The safety monitor flagged the last response.");
+      }
     } catch(err) {
       setError(err.message || "Turn failed. Check connection and try again.");
     }
@@ -1183,7 +1272,7 @@ Respond ONLY as valid JSON:
         <div className="breathe-t" style={{fontFamily:"var(--fd)",fontSize:72,fontWeight:800,letterSpacing:"-4px",lineHeight:.9,marginBottom:16}}>
           AEGIS
         </div>
-        <div style={{fontFamily:"var(--fm)",fontSize:11,color:"var(--tm)",letterSpacing:"4px",marginBottom:18,textTransform:"uppercase"}}>Crisis De-escalation Engine · v3.1</div>
+        <div style={{fontFamily:"var(--fm)",fontSize:11,color:"var(--tm)",letterSpacing:"4px",marginBottom:18,textTransform:"uppercase"}}>Crisis De-escalation Engine · v3.2</div>
         <div style={{fontFamily:"var(--fm)",fontSize:12,color:"rgba(232,240,255,.32)",maxWidth:520,margin:"0 auto",lineHeight:1.85}}>
           Multi-role dual-agent AI platform for crisis de-escalation training.<br/>
           Real-time supervisory feedback across clinical, police, and corrections tracks.<br/>
@@ -1240,8 +1329,22 @@ Respond ONLY as valid JSON:
 
       {/* Scenario selector — cascades from role (+ profile) */}
       <div className="s3" style={{marginBottom:28}}>
-        <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--tm)",letterSpacing:"2.5px",textTransform:"uppercase",marginBottom:12}}>Select Crisis Scenario · {visibleScenarios.length} in scope</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        {importDraft && (
+          <div className="gl" style={{borderRadius:16,padding:"14px 18px",marginBottom:14,borderLeft:"3px solid var(--amb)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+            <div style={{fontFamily:"var(--fm)",fontSize:11,color:"rgba(232,240,255,.7)",lineHeight:1.6}}>
+              <span style={{color:"var(--amb)"}}>Shared scenario received:</span> {importDraft.title||"Untitled"}. It needs an AI review before anyone can run it.
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button className="gh-btn" onClick={()=>{setImportDraft(null);try{history.replaceState(null,"",window.location.pathname+window.location.search);}catch{}}} style={{padding:"8px 12px"}}>Dismiss</button>
+              <button className="tx-btn" onClick={acceptImport} style={{padding:"8px 14px",fontSize:12}}><span style={{position:"relative",zIndex:1}}>Review & add →</span></button>
+            </div>
+          </div>
+        )}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+          <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--tm)",letterSpacing:"2.5px",textTransform:"uppercase"}}>Select Crisis Scenario · {visibleScenarios.length} in scope{customForRole.length?` · ${customForRole.length} custom`:""}</div>
+          <button className="gh-btn" onClick={()=>openBuilder(newDraft(role.id))} style={{padding:"8px 14px",color:role.color,borderColor:`${role.color}55`}}>＋ Build custom scenario</button>
+        </div>
+        <div className="sc-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
           {visibleScenarios.map(sc=>(
             <div key={sc.id} className={`gl sc-card ${selectedSc.id===sc.id?"sel":""}`}
               style={{borderRadius:18,padding:"18px 20px",borderLeft:`3px solid ${selectedSc.id===sc.id?sc.riskColor:"rgba(255,255,255,.1)"}`,boxShadow:selectedSc.id===sc.id?`0 0 26px ${sc.riskColor}20`:""}}
@@ -1251,12 +1354,37 @@ Respond ONLY as valid JSON:
                 <div style={{fontFamily:"var(--fm)",fontSize:9,color:sc.riskColor,background:`${sc.riskColor}18`,padding:"3px 9px",borderRadius:20,border:`1px solid ${sc.riskColor}40`,letterSpacing:"1px"}}>{sc.riskLevel}</div>
               </div>
               <div style={{fontFamily:"var(--fd)",fontSize:15,fontWeight:700,marginBottom:6}}>{sc.title}</div>
+              {sc.custom && (
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                  <span style={{fontFamily:"var(--fm)",fontSize:8,color:"var(--vio)",background:"var(--vd)",border:"1px solid rgba(167,139,250,.35)",padding:"2px 8px",borderRadius:20,letterSpacing:"1px"}}>CUSTOM · {sc.clientName}, {sc.age}</span>
+                  <span style={{fontFamily:"var(--fm)",fontSize:8,letterSpacing:"1px",padding:"2px 8px",borderRadius:20,
+                    color:sc.status==="tested"?"#00FFB2":sc.status==="reviewed"?"#00D4FF":"#FFB800",
+                    border:`1px solid ${sc.status==="tested"?"#00FFB255":sc.status==="reviewed"?"#00D4FF55":"#FFB80055"}`}}>
+                    {sc.status==="tested"?"✓ READY TO SHARE":sc.status==="reviewed"?"✓ REVIEWED · NEEDS TEST RUN":"DRAFT · NEEDS REVIEW"}
+                  </span>
+                </div>
+              )}
               <div style={{fontFamily:"var(--fm)",fontSize:11,color:"var(--tm)",lineHeight:1.7,marginBottom:10}}>{sc.description}</div>
               <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
                 {sc.tags.map(t=>(
                   <span key={t} style={{fontFamily:"var(--fm)",fontSize:9,color:"rgba(232,240,255,.45)",background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.08)",padding:"2px 8px",borderRadius:20}}>{t}</span>
                 ))}
               </div>
+              {sc.custom && (
+                <div style={{display:"flex",gap:6,marginTop:12,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                  <button className="gh-btn" style={{padding:"6px 10px",fontSize:11}} onClick={()=>openBuilder(customList.find(c=>c.id===sc.id))}>✎ Edit</button>
+                  <button className="gh-btn" style={{padding:"6px 10px",fontSize:11}} onClick={()=>shareCustom(sc.id)}>↗ Share</button>
+                  <button className="gh-btn" style={{padding:"6px 10px",fontSize:11,color:confirmDel===sc.id?"var(--ros)":undefined,borderColor:confirmDel===sc.id?"var(--ros)":undefined}}
+                    onClick={()=>deleteCustom(sc.id)}>{confirmDel===sc.id?"Tap again to delete":"Delete"}</button>
+                </div>
+              )}
+              {sc.custom && shareInfo?.id===sc.id && (
+                <div onClick={e=>e.stopPropagation()} style={{marginTop:10,fontFamily:"var(--fm)",fontSize:10,color:"rgba(232,240,255,.6)",lineHeight:1.6}}>
+                  {shareInfo.msg}
+                  {shareInfo.url && <input readOnly value={shareInfo.url} onFocus={e=>e.target.select()} aria-label="Share link"
+                    style={{display:"block",width:"100%",marginTop:6,fontFamily:"var(--fm)",fontSize:10,color:"var(--tx)",background:"rgba(0,212,255,.04)",border:"1px solid var(--gb)",borderRadius:8,padding:"8px"}}/>}
+                </div>
+              )}
               {selectedSc.id===sc.id && trainingMode!=="assessment" && (
                 <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,.07)"}}>
                   <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--cyan)",letterSpacing:"1.5px",marginBottom:5}}>INITIAL AGITATION</div>
@@ -1314,7 +1442,7 @@ Respond ONLY as valid JSON:
           <div style={{width:54,height:54,borderRadius:14,background:`${selectedSc.riskColor}16`,border:`2px solid ${selectedSc.riskColor}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>{selectedSc.icon}</div>
           <div>
             <div style={{fontFamily:"var(--fd)",fontSize:16,fontWeight:700,marginBottom:6}}>{selectedSc.clientName}, {selectedSc.age} · {selectedSc.title}</div>
-            <div style={{fontFamily:"var(--fm)",fontSize:12,color:"var(--tm)",lineHeight:1.8}}>{selectedSc.context}</div>
+            <div style={{fontFamily:"var(--fm)",fontSize:12,color:"var(--tm)",lineHeight:1.8}}>{selectedSc.briefContext||selectedSc.context}</div>
           </div>
         </div>
         <div style={{paddingTop:14,borderTop:"1px solid rgba(255,255,255,.07)"}}>
@@ -1329,7 +1457,13 @@ Respond ONLY as valid JSON:
       </div>
 
       <div className="s5">
-        <button onClick={startSimulation} style={{
+        {!scReady(selectedSc) && (
+          <div style={{fontFamily:"var(--fm)",fontSize:11,color:"var(--amb)",textAlign:"center",marginBottom:10}}>
+            This custom scenario hasn't passed its AI review yet. Tap ✎ Edit on its card to review it.
+          </div>
+        )}
+        <button onClick={startSimulation} disabled={!scReady(selectedSc)} style={{
+          opacity:scReady(selectedSc)?1:.35,cursor:scReady(selectedSc)?"pointer":"not-allowed",
           width:"100%",padding:"18px",background:"linear-gradient(135deg,var(--cyan),#006FA8)",
           color:"#001520",border:"none",fontFamily:"var(--fd)",fontWeight:800,fontSize:16,
           borderRadius:16,cursor:"pointer",boxShadow:"0 0 40px rgba(0,212,255,.32)",
@@ -1383,6 +1517,19 @@ Respond ONLY as valid JSON:
             <button className="end-btn" onClick={endSession} style={{padding:"6px 14px"}}>END SESSION</button>
           </div>
         </div>
+
+        {halt && (
+          <div role="alert" className="gl" style={{margin:"12px 16px 0",borderRadius:16,padding:"14px 18px",borderLeft:"3px solid var(--ros)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontFamily:"var(--fm)",fontSize:9,color:"var(--ros)",letterSpacing:"2px",marginBottom:4}}>SESSION PAUSED BY SAFETY MONITOR</div>
+              <div style={{fontFamily:"var(--fm)",fontSize:11,color:"rgba(232,240,255,.7)",lineHeight:1.6}}>{halt} The scenario author can edit it and run the review again.</div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button className="gh-btn" onClick={()=>{setHalt(null);setScreen("setup");}} style={{padding:"8px 12px"}}>Back to setup</button>
+              <button className="end-btn" onClick={endSession} style={{padding:"8px 12px"}}>End & view report</button>
+            </div>
+          </div>
+        )}
 
         {/* MAIN GRID */}
         <div style={{display:"grid",gridTemplateColumns:"1.15fr 0.85fr",gap:12,padding:"14px 16px",flex:1}}>
@@ -1796,6 +1943,10 @@ Respond ONLY as valid JSON:
       {screen==="gate"       && renderGate()}
       {screen!=="gate" && !disclaimerAck && renderDisclaimer()}
       {screen==="setup"      && renderSetup()}
+      {screen==="builder"    && builderDraft && (
+        <ScenarioBuilder key={builderDraft.id} role={role} initial={builderDraft} callAPI={callAPI}
+          onSave={upsertCustom} onCancel={()=>{setBuilderDraft(null);setScreen("setup");}}/>
+      )}
       {screen==="simulation" && renderSimulation()}
       {screen==="report"     && renderReport()}
     </div>

@@ -54,6 +54,17 @@ Dignity and respect, calm directive communication, realistic choices within faci
 
 Assessment mode withholds all feedback and telemetry during the session and reveals the complete evaluation only in the final report — the foundation for formal skills testing.
 
+## Custom Scenarios
+
+Training coordinators can build their own scenarios for any track (**＋ Build custom scenario** on the setup screen). Custom scenarios use the same format as the built-in ones and run through the same Actor and Supervisor.
+
+- **Structured builder:** person (fictional name, age 5–95, pronouns), setting (clinic, school, street, facility…), who else is in the room, up to three presentations, a 600-character backstory, details the person holds back, starting agitation, and key considerations.
+- **AI review before use:** a quick local check (real client details, instruction-like text, missing fields), then one Claude review for safety, stereotypes, contradictions, and thin detail, with a suggested fix for each finding. Blocked scenarios can't be run.
+- **Locked safety rules:** applied server-side by the Worker to every custom-scenario Actor call; instructor text is fenced in `<scenario_details>` so it can't act as instructions. Minors get extra youth rules automatically.
+- **Live safety monitor:** the Supervisor checks each Actor turn, and the app pauses the session if the Actor steps out of character or crosses a rule.
+- **Test run, then share:** a scenario can be shared only after a test session. Share links carry the scenario in the URL; anyone who opens one gets a copy that must pass its own AI review.
+- Custom scenarios are saved in the browser on the device that built them.
+
 ## Session Report
 
 - Overall performance rating with per-turn score history
@@ -77,6 +88,8 @@ Assessment mode withholds all feedback and telemetry during the session and reve
 
 ## Version History
 
+- **v3.2** — Custom scenario builder with AI review, locked server-side safety rules, live safety monitor, test-run gate, and share links; new `aegis-api` Cloudflare Worker (in `worker/`) with model allowlist, token cap, and rate limiting
+
 - **v3.1** — Multi-dimensional subject state (agitation/rapport/cooperation), three training modes, five-dimension supervisor scoring per role, After Action Review, critical-moment detection, replay metadata foundation, peer-intervention and tier talk-down scenarios, brand mark, hardened disclaimers
 - **v3.0** — Multi-role expansion: Police Officer and Corrections Officer tracks with role-specific evaluation frameworks; clinician profile selector restored; Cloudflare Worker routing; access gate
 - **v2.x** — Dual-agent clinical simulator: 10 scenarios across the lifespan, DBT-scored supervision, difficulty tiers, session reports
@@ -85,7 +98,7 @@ Assessment mode withholds all feedback and telemetry during the session and reve
 
 - Worker-side session issuance and rate limiting
 - Session replay from stored turn metadata
-- Scenario authoring interface for training coordinators
+- Shared scenario library per cohort (server storage)
 - Cohort analytics for training programs
 - Azure AI Foundry deployment path for HIPAA-scoped institutional use
 
