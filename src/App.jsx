@@ -121,69 +121,71 @@ const AegisLogo = ({ size=64, glow=true }) => (
   </svg>
 );
 
-// New Worker (worker/ folder in this repo) first; the original proxy stays as a fallback.
+// All live traffic goes through the aegis-api Worker (worker/ folder in this repo).
+// It holds the API key, checks the access code, applies the locked safety rules,
+// and only answers requests from the AEGIS site.
 const API_WORKER_URL = "https://aegis-api.r-fella10.workers.dev";
-const WORKER_URL = "https://aegis-proxy.r-fella10.workers.dev";
 // Environment auto-detect:
 // - Inside a Claude artifact (claude.ai preview), only api.anthropic.com is reachable,
 //   so calls go direct (the artifact sandbox supplies credentials).
-// - Everywhere else (Vercel live deploy), calls route through the Cloudflare Worker,
-//   which injects the API key server-side and handles CORS.
+// - Everywhere else (Vercel live deploy), calls route through the Worker.
 const IS_ARTIFACT = typeof window !== "undefined" && /claude/i.test(window.location.hostname);
 const DIRECT_URL = "https://api.anthropic.com/v1/messages";
 
-// Worker route auto-discovery: different proxy builds expose the endpoint on
-// different paths. On the first live call we try each candidate and remember
-// whichever one actually answers, so the app self-heals if the route changes.
-const ROUTE_CANDIDATES = ["","/claude","/api","/api/claude","/v1/messages","/messages","/chat","/proxy","/anthropic"];
-// Model fallback: a 404 from the API can mean "model not found", not a bad route.
+// Model fallback: a 404 from the API can mean "model not found".
 // Try current model ids in order and remember whichever the account can use.
 const MODEL_CANDIDATES = ["claude-sonnet-4-5","claude-sonnet-4-20250514","claude-3-5-sonnet-latest","claude-haiku-4-5-20251001"];
-let RESOLVED_URL = null;
 let RESOLVED_MODEL = null;
 
+// Access code the user signed in with. Never stored in the code: the Worker
+// checks it against its ACCESS_CODE secret on every request.
+let ACCESS_TOKEN = "";
+
+async function checkAccessCode(code) {
+  if (IS_ARTIFACT) return { ok:true };
+  try {
+    const res = await fetch(`${API_WORKER_URL}/auth`, {
+      method:"POST", headers:{"Content-Type":"application/json","X-Aegis-Access":code}, body:"{}"
+    });
+    if (res.ok) { ACCESS_TOKEN = code; return { ok:true }; }
+    if (res.status === 401) return { ok:false, msg:"Invalid access code" };
+    if (res.status === 429) return { ok:false, msg:"Too many attempts. Wait a minute and try again." };
+    return { ok:false, msg:"The server isn't ready. Try again shortly." };
+  } catch {
+    return { ok:false, msg:"Can't reach the server. Check your connection and try again." };
+  }
+}
+
 async function callAPI(body){
-  const post = (url, payload) => fetch(url,{
-    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)
-  });
-  // "aegis" metadata only goes to the new Worker, which strips it and applies the
-  // locked safety rules server-side. Everywhere else the rules are added here.
+  // "aegis" metadata goes to the Worker, which strips it and applies the locked
+  // safety rules server-side. In direct/preview mode the rules are added here.
   const { aegis, ...plain } = body;
   const withRules = (b) => (aegis?.custom && (aegis.agent==="actor"||aegis.agent==="opening"))
     ? {...b, system:`${b.system}\n\n${aegis.rulesText}`} : b;
-  const payloadFor = (url, model) => url.startsWith(API_WORKER_URL)
-    ? {...plain, model, aegis:{agent:aegis?.agent, custom:!!aegis?.custom, minor:!!aegis?.minor}}
-    : {...withRules(plain), model};
-  const base = IS_ARTIFACT ? [DIRECT_URL] : (RESOLVED_URL ? [RESOLVED_URL] : [API_WORKER_URL, ...ROUTE_CANDIDATES.map(p=>`${WORKER_URL}${p}`)]);
+  const url = IS_ARTIFACT ? DIRECT_URL : API_WORKER_URL;
+  const payloadFor = (model) => IS_ARTIFACT
+    ? {...withRules(plain), model}
+    : {...plain, model, aegis:{agent:aegis?.agent, custom:!!aegis?.custom, minor:!!aegis?.minor}};
+  const headers = {"Content-Type":"application/json", ...(IS_ARTIFACT ? {} : {"X-Aegis-Access":ACCESS_TOKEN})};
   const models = RESOLVED_MODEL ? [RESOLVED_MODEL] : MODEL_CANDIDATES;
 
   let lastStatus = 0, lastDetail = "";
-  for (const url of base) {
-    for (const model of models) {
-      let res;
-      try { res = await post(url, payloadFor(url, model)); } catch { break; } // network/CORS — try next url
-      if (res.ok) { RESOLVED_URL = url; RESOLVED_MODEL = model; return res.json(); }
-      lastStatus = res.status;
-      try { lastDetail = (await res.text()).slice(0,160); } catch { lastDetail = ""; }
-      if (res.status === 404) continue;              // could be bad model OR bad path — keep trying
-      if (res.status === 401 || res.status === 403)  // credential problem, not a route problem
-        throw new Error(`auth error ${res.status}: ${lastDetail}`);
-      if (res.status >= 500) continue;               // transient upstream — try next combo
-      throw new Error(`API ${res.status}: ${lastDetail}`);
-    }
+  for (const model of models) {
+    let res;
+    try { res = await fetch(url,{method:"POST",headers,body:JSON.stringify(payloadFor(model))}); }
+    catch { throw new Error("can't reach the server — check your connection"); }
+    if (res.ok) { RESOLVED_MODEL = model; return res.json(); }
+    lastStatus = res.status;
+    try { lastDetail = (await res.text()).slice(0,160); } catch { lastDetail = ""; }
+    if (res.status === 404) continue;              // model not available — try the next one
+    if (res.status === 401 || res.status === 403)  // access code or site not allowed
+      throw new Error(`auth error ${res.status}: ${lastDetail}`);
+    if (res.status >= 500 && res.status !== 503) continue; // transient upstream — try next model
+    throw new Error(`API ${res.status}: ${lastDetail}`);
   }
-  // Reset so the next attempt rediscovers from scratch.
-  RESOLVED_URL = null; RESOLVED_MODEL = null;
+  RESOLVED_MODEL = null;
   throw new Error(`API ${lastStatus}${lastDetail ? " — " + lastDetail : ""}`);
 }
-
-// ─────────────────────────────────────────────────────────────
-// !! ACCESS CODE — change this before sharing the app !!
-// Simple shared-passcode gate. Protects API credits from
-// unauthorized/drive-by usage. Not full auth — swap for
-// Supabase or similar if this becomes an institutional tool.
-const ACCESS_CODE = "AEGIS2026";
-// ─────────────────────────────────────────────────────────────
 
 const Mesh = () => (
   <div style={{position:"fixed",inset:0,overflow:"hidden",zIndex:0,background:"#040812"}}>
@@ -877,10 +879,11 @@ Otherwise "halt" is false.
 
 /* ── Main Component ──────────────────────────────────── */
 export default function AegisSimulator() {
-  const [screen,        setScreen]       = useState(ACCESS_CODE ? "gate" : "setup");
+  const [screen,        setScreen]       = useState("gate");
   const [gateInput,     setGateInput]    = useState("");
   const [disclaimerAck, setDisclaimerAck] = useState(false);
   const [gateError,     setGateError]    = useState(false);
+  const [gateBusy,      setGateBusy]     = useState(false);
   const [selectedRole,  setSelectedRole] = useState(ROLES[0]);
   const [selectedProfile, setSelectedProfile] = useState(CLINICIAN_PROFILES[0]);
   const [selectedSc,    setSelectedSc]   = useState(
@@ -991,9 +994,13 @@ export default function AegisSimulator() {
     setSelectedSc(role.scenarios.find(s=>ROLE_SCENARIOS[p.id].includes(s.id))||role.scenarios[0]);
   };
 
-  const tryGate = () => {
-    if(gateInput.trim()===ACCESS_CODE){ setGateError(false); setScreen("setup"); }
-    else { setGateError(true); }
+  const tryGate = async () => {
+    if(!gateInput.trim() || gateBusy) return;
+    setGateBusy(true); setGateError(false);
+    const r = await checkAccessCode(gateInput.trim());
+    setGateBusy(false);
+    if(r.ok){ setScreen("setup"); }
+    else { setGateError(r.msg); }
   };
 
   /* ── Start simulation ── */
@@ -1247,8 +1254,8 @@ Respond ONLY as valid JSON:
           onKeyDown={e=>{if(e.key==="Enter")tryGate();}}
           placeholder="Enter access code"
           style={{width:"100%",fontFamily:"var(--fm)",fontSize:14,color:"var(--tx)",background:"rgba(0,212,255,.03)",border:`1px solid ${gateError?"var(--ros)":"var(--gb)"}`,borderRadius:12,padding:"14px 16px",outline:"none",textAlign:"center",letterSpacing:"3px",marginBottom:12}}/>
-        {gateError&&<div style={{fontFamily:"var(--fm)",fontSize:10,color:"var(--ros)",marginBottom:12}}>Invalid access code</div>}
-        <button className="tx-btn" onClick={tryGate} style={{width:"100%",padding:"14px"}}>ENTER →</button>
+        {gateError&&<div role="alert" style={{fontFamily:"var(--fm)",fontSize:10,color:"var(--ros)",marginBottom:12}}>{gateError}</div>}
+        <button className="tx-btn" onClick={tryGate} disabled={gateBusy} style={{width:"100%",padding:"14px"}}>{gateBusy?"CHECKING…":"ENTER →"}</button>
         <div style={{fontFamily:"var(--fm)",fontSize:9,color:"rgba(232,240,255,.22)",marginTop:18,lineHeight:1.7}}>Training simulation only.<br/>Access provided by the administrator.</div>
       </div>
     </div>
