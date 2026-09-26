@@ -1466,7 +1466,7 @@ Respond ONLY as valid JSON:
           opacity:scReady(selectedSc)?1:.35,cursor:scReady(selectedSc)?"pointer":"not-allowed",
           width:"100%",padding:"18px",background:"linear-gradient(135deg,var(--cyan),#006FA8)",
           color:"#001520",border:"none",fontFamily:"var(--fd)",fontWeight:800,fontSize:16,
-          borderRadius:16,cursor:"pointer",boxShadow:"0 0 40px rgba(0,212,255,.32)",
+          borderRadius:16,boxShadow:"0 0 40px rgba(0,212,255,.32)",
           position:"relative",overflow:"hidden",letterSpacing:".5px"
         }}>
           <span style={{position:"relative",zIndex:1}}>INITIALIZE SIMULATION →</span>
