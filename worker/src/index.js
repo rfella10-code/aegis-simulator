@@ -74,9 +74,12 @@ function corsHeaders(origin, ok) {
   };
 }
 
-// Length-independent compare so the check doesn't leak timing hints.
+// Forgiving compare: ignores surrounding spaces and capitalization, because
+// phone keyboards often add a trailing space or a capital when the secret is typed.
+// Length-independent so the check doesn't leak timing hints.
 function sameCode(a, b) {
-  a = String(a || ""); b = String(b || "");
+  a = String(a || "").trim().toLowerCase(); b = String(b || "").trim().toLowerCase();
+  if (!b) return false;
   let diff = a.length ^ b.length;
   for (let i = 0; i < Math.max(a.length, b.length); i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
   return diff === 0;
