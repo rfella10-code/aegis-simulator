@@ -100,7 +100,7 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") return new Response(null, { status: allowedOrigin ? 204 : 403, headers: cors });
-    if (request.method === "GET") return json({ ok: true, service: "aegis-api", version: 2, accessCode: !!env.ACCESS_CODE }, 200, cors);
+    if (request.method === "GET") return json({ ok: true, service: "aegis-api", version: 3, accessCode: !!env.ACCESS_CODE }, 200, cors);
     if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, cors);
 
     // Only the AEGIS site may use this Worker.
